@@ -410,7 +410,7 @@ function renderDetail(d) {
         <div class="name" onclick="renameDevice()">${escapeHtml(d.label)}</div>
         <span class="ip">${d.ip}</span>
         <span class="meta-line">
-          <span class="accent">${escapeHtml(d.model || '')}</span> · ${escapeHtml(d.version || '')} ·
+          <span class="accent">${escapeHtml((d.chip && d.chip.display_name) || d.model || '')}</span>${d.chip && d.chip.display_name ? ` <span class="dim">(${escapeHtml(d.model || '')})</span>` : ''} · ${escapeHtml(d.version || '')} ·
           uptime ${fmtUptime(m.uptime)}
         </span>
       </div>

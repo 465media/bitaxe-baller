@@ -1,6 +1,8 @@
 # Bitaxe Baller
 
-**v1.6** — Flask app + browser dashboard for monitoring and tuning Bitaxe Gamma (BM1370) miners on the local network. Two pages: a compact scannable home view, plus a per-device detail page for tuning + pool config. Built-in LAN scanner auto-discovers new miners. Inline tooltips throughout. Single shared stylesheet and JS helper file under `static/`. No build step.
+**v1.8.4** — Flask app + browser dashboard for monitoring and tuning Bitaxe miners (Gamma / Supra / Ultra / Hex — all AxeOS chips) on the local network. Two pages: a compact scannable home view, plus a per-device detail page for tuning + pool config. Built-in LAN scanner auto-discovers new miners. Inline tooltips throughout. Single shared stylesheet and JS helper file under `static/`. No build step.
+
+Per-chip tuning presets and safety bounds live in `CHIP_PROFILES` (BM1370 Gamma, BM1368 Supra, BM1366 Ultra/Hex). The data layer reads `ASICModel` + `expectedHashrate` straight from the firmware, so the recommendation engine + tune/preset/autotune endpoints all dispatch on the device's chip. Unknown chips fall back to Gamma defaults so a future BM-whatever still works.
 
 ## Run
 

@@ -26,7 +26,7 @@ from flask import Flask, jsonify, render_template, request
 # Info.plist/EXE version and the dashboard footer template should both
 # match this string. Update bump checklist: APP_VERSION here, the spec's
 # version="..." entries, and the v1.X.Y string in dashboard.html + device.html.
-APP_VERSION = "1.8.3"
+APP_VERSION = "1.8.4"
 
 
 # Test-mode override: pretend to be an older version so the auto-update flow
@@ -108,21 +108,100 @@ LEMONSQUEEZY_API_BASE = "https://bitaxeballer.com/api/license"
 # refunds / expirations without hammering the endpoint on every request.
 LICENSE_REVALIDATE_S = 24 * 3600
 
-# Tuning presets for Gamma (BM1370)
-PRESETS = {
-    "stock":      {"frequency": 525, "coreVoltage": 1150, "label": "Stock"},
-    "mild":       {"frequency": 550, "coreVoltage": 1170, "label": "Mild OC"},
-    "balanced":   {"frequency": 575, "coreVoltage": 1185, "label": "Balanced"},
-    "aggressive": {"frequency": 600, "coreVoltage": 1200, "label": "Aggressive"},
-    "max":        {"frequency": 625, "coreVoltage": 1225, "label": "Max (risky)"},
+# Per-chip presets + safety bounds. The data layer is chip-agnostic (we read
+# ASICModel and expectedHashrate straight from the firmware), but the safe
+# tuning envelope differs across chip families.
+#
+#   BM1370 (Gamma)  — bigger die, higher frequency ceiling, lower voltage
+#   BM1368 (Supra)  — middle of the family, mid-range freq/volt
+#   BM1366 (Ultra)  — smallest die, needs more voltage for the same freq
+#   Hex             — reports ASICModel="BM1366" too (it's 6× BM1366 on one
+#                     board), so it picks up the Ultra profile automatically.
+#                     Per-chip envelope is the same; smallCoreCount is 6×.
+#
+# Bounds are conservative — users can still set anything inside the
+# envelope manually. Presets are 5-step ladders matching what the community
+# generally treats as Stock / Mild / Balanced / Aggressive / Max for each chip.
+CHIP_PROFILES = {
+    "BM1370": {  # Gamma
+        "display_name":   "Gamma",
+        "freq_bounds":    (400, 700),     # MHz
+        "voltage_bounds": (1000, 1300),   # mV
+        "presets": {
+            "stock":      {"frequency": 525, "coreVoltage": 1150, "label": "Stock"},
+            "mild":       {"frequency": 550, "coreVoltage": 1170, "label": "Mild OC"},
+            "balanced":   {"frequency": 575, "coreVoltage": 1185, "label": "Balanced"},
+            "aggressive": {"frequency": 600, "coreVoltage": 1200, "label": "Aggressive"},
+            "max":        {"frequency": 625, "coreVoltage": 1225, "label": "Max (risky)"},
+        },
+    },
+    "BM1368": {  # Supra
+        "display_name":   "Supra",
+        "freq_bounds":    (400, 625),
+        "voltage_bounds": (1000, 1250),
+        "presets": {
+            "stock":      {"frequency": 490, "coreVoltage": 1170, "label": "Stock"},
+            "mild":       {"frequency": 525, "coreVoltage": 1185, "label": "Mild OC"},
+            "balanced":   {"frequency": 555, "coreVoltage": 1200, "label": "Balanced"},
+            "aggressive": {"frequency": 575, "coreVoltage": 1215, "label": "Aggressive"},
+            "max":        {"frequency": 590, "coreVoltage": 1230, "label": "Max (risky)"},
+        },
+    },
+    "BM1366": {  # Ultra (also the per-chip profile for Hex)
+        "display_name":   "Ultra",
+        "freq_bounds":    (400, 600),
+        "voltage_bounds": (1100, 1300),
+        "presets": {
+            "stock":      {"frequency": 485, "coreVoltage": 1200, "label": "Stock"},
+            "mild":       {"frequency": 500, "coreVoltage": 1215, "label": "Mild OC"},
+            "balanced":   {"frequency": 525, "coreVoltage": 1230, "label": "Balanced"},
+            "aggressive": {"frequency": 540, "coreVoltage": 1250, "label": "Aggressive"},
+            "max":        {"frequency": 560, "coreVoltage": 1275, "label": "Max (risky)"},
+        },
+    },
 }
+DEFAULT_CHIP = "BM1370"  # Fall back to Gamma if a device reports an unknown ASICModel.
 
-# Sane bounds — refuse to send anything outside these
-BOUNDS = {
-    "frequency": (400, 700),     # MHz
-    "coreVoltage": (1000, 1300), # mV
-    "fanspeed": (0, 100),        # %
-}
+FAN_BOUNDS = (0, 100)  # Universal across all chips.
+
+
+def chip_profile_for(asic_model):
+    """Returns the chip profile dict for a given ASICModel. Falls back to the
+    Gamma profile for unknown chips so the app stays functional on miners we
+    haven't tested. Hex (6× BM1366) gets the Ultra profile because it reports
+    ASICModel="BM1366" — same per-chip envelope, just more chips on one board.
+    """
+    if asic_model:
+        key = str(asic_model).upper()
+        if key in CHIP_PROFILES:
+            return CHIP_PROFILES[key]
+    return CHIP_PROFILES[DEFAULT_CHIP]
+
+
+def chip_bounds(profile):
+    """Helper to flatten a profile into a {key: (lo, hi)} bounds dict matching
+    the format the tune / preset endpoints validate against."""
+    return {
+        "frequency":   profile["freq_bounds"],
+        "coreVoltage": profile["voltage_bounds"],
+        "fanspeed":    FAN_BOUNDS,
+    }
+
+
+def chip_profile_for_ip(ip):
+    """Looks up the chip profile for a tracked device by IP. Acquires state_lock
+    briefly to read the latest ASICModel; safe to call from anywhere."""
+    with state_lock:
+        s = state.get(ip)
+        asic = (s.get("latest") or {}).get("ASICModel") if s else None
+    return chip_profile_for(asic)
+
+
+# Backward-compat aliases — Gamma is the default profile so any code path or
+# template that still reads PRESETS / BOUNDS as module-level globals gets sane
+# defaults. The tune + preset endpoints look up per-device profiles instead.
+PRESETS = CHIP_PROFILES[DEFAULT_CHIP]["presets"]
+BOUNDS = chip_bounds(CHIP_PROFILES[DEFAULT_CHIP])
 
 state_lock = threading.Lock()
 state = {}                # ip -> device state
@@ -315,8 +394,11 @@ def rolling_avg(history, window_size, key="hashRate"):
     return sum(p[key] for p in pts) / len(pts)
 
 
-def _clamp(val, key):
-    lo, hi = BOUNDS[key]
+def _clamp(val, key, bounds=None):
+    """Clamps `val` into the safe range for `key` (frequency / coreVoltage /
+    fanspeed). Pass a chip-specific `bounds` dict to clamp against that chip's
+    envelope; otherwise falls back to Gamma defaults via the BOUNDS global."""
+    lo, hi = (bounds or BOUNDS)[key]
     return max(lo, min(hi, val))
 
 
@@ -347,6 +429,11 @@ def compute_recommendations(s, hist, avgs, hw_rate_pct, shares_delta, j_per_th, 
     vr = latest.get("vrTemp", 0)
     autofan = latest.get("autofanspeed", 0)
 
+    # Pull the chip-specific safe envelope so suggested values stay inside the
+    # right range for this miner's chip (BM1370 / 1368 / 1366).
+    profile = chip_profile_for(latest.get("ASICModel"))
+    bounds = chip_bounds(profile)
+
     recs = []
 
     # Need a few minutes of data before tuning suggestions are meaningful.
@@ -361,7 +448,7 @@ def compute_recommendations(s, hist, avgs, hw_rate_pct, shares_delta, j_per_th, 
 
     # 1. CRIT: VR temp in danger zone
     if vr >= 65:
-        new_v = _clamp(volt - 15, "coreVoltage")
+        new_v = _clamp(volt - 15, "coreVoltage", bounds)
         recs.append({
             "id": "vr_critical",
             "severity": "crit",
@@ -372,7 +459,7 @@ def compute_recommendations(s, hist, avgs, hw_rate_pct, shares_delta, j_per_th, 
 
     # 2. CRIT: HW error rate too high
     if shares_delta >= 20 and hw_rate_pct >= 1.0:
-        new_v = _clamp(volt - 10, "coreVoltage")
+        new_v = _clamp(volt - 10, "coreVoltage", bounds)
         recs.append({
             "id": "hw_high",
             "severity": "crit",
@@ -383,7 +470,7 @@ def compute_recommendations(s, hist, avgs, hw_rate_pct, shares_delta, j_per_th, 
 
     # 3. WARN: HW errors climbing (0.5 - 1%)
     elif shares_delta >= 20 and hw_rate_pct >= 0.5:
-        new_v = _clamp(volt + 10, "coreVoltage")
+        new_v = _clamp(volt + 10, "coreVoltage", bounds)
         recs.append({
             "id": "hw_climbing",
             "severity": "warn",
@@ -423,11 +510,11 @@ def compute_recommendations(s, hist, avgs, hw_rate_pct, shares_delta, j_per_th, 
         })
 
     # 6. GOOD: stable + low errors + has headroom → suggest pushing frequency
-    has_headroom_freq = freq + 25 <= BOUNDS["frequency"][1]
+    has_headroom_freq = freq + 25 <= bounds["frequency"][1]
     stable_long = age_s >= 900 and samples >= 150  # 15+ minutes of data
     if (stable_long and hw_rate_pct < 0.1 and vr < 60 and asic < 60
             and has_headroom_freq):
-        new_f = _clamp(freq + 25, "frequency")
+        new_f = _clamp(freq + 25, "frequency", bounds)
         recs.append({
             "id": "push_freq",
             "severity": "good",
@@ -517,6 +604,11 @@ def device_summary(s):
 
     recs = compute_recommendations(s, hist, avgs, hw_rate_pct, shares_delta, j_per_th, ghs, expected_ghs)
 
+    # Chip profile drives per-device preset + bounds rendering in the UI.
+    # The frontend reads device.chip.presets / bounds rather than hardcoding
+    # Gamma values, so a Supra / Ultra / Hex card gets the right ladder.
+    _profile = chip_profile_for(latest.get("ASICModel"))
+
     return {
         "ip": s["ip"],
         "label": s["label"],
@@ -525,6 +617,14 @@ def device_summary(s):
         "model": latest.get("ASICModel", "unknown"),
         "version": latest.get("version", ""),
         "hostname": latest.get("hostname", ""),
+        "chip": {
+            "asic_model":     latest.get("ASICModel", "unknown"),
+            "display_name":   _profile["display_name"],
+            "freq_bounds":    list(_profile["freq_bounds"]),
+            "voltage_bounds": list(_profile["voltage_bounds"]),
+            "fan_bounds":     list(FAN_BOUNDS),
+            "presets":        _profile["presets"],
+        },
         "metrics": {
             "hashRate": round(ghs, 1),
             "temp": round(latest.get("temp", 0), 1),
@@ -889,7 +989,10 @@ def _autotune_tick(ip: str, s: dict) -> None:
     }
 
     # --- Decision ---
-    max_freq = int(a.get("max_freq") or BOUNDS["frequency"][1])
+    # Chip-specific frequency ceiling — falls back to this chip's freq_bounds
+    # max if the autotune state somehow lost its captured max_freq.
+    _chip_freq_max = chip_profile_for((s.get("latest") or {}).get("ASICModel"))["freq_bounds"][1]
+    max_freq = int(a.get("max_freq") or _chip_freq_max)
     step = int(a.get("step") or 0)
     if hw_pct >= AUTOTUNE_HW_CEILING_PCT:
         # Errors are climbing — declare current freq the ceiling, back off one step.
@@ -952,7 +1055,17 @@ def device_detail(ip):
     with state_lock:
         if ip not in state:
             return ("Device not found. <a href='/'>Back to overview</a>", 404)
-    return render_template("device.html", ip=ip, presets=PRESETS, bounds=BOUNDS)
+    # Pass the device's own chip profile (presets + bounds) to the template so
+    # the tuning UI shows the right MHz/mV ladder for Gamma vs. Supra vs. Ultra.
+    # Falls back to Gamma defaults if the device hasn't reported ASICModel yet.
+    profile = chip_profile_for_ip(ip)
+    return render_template(
+        "device.html",
+        ip=ip,
+        presets=profile["presets"],
+        bounds=chip_bounds(profile),
+        chip_display_name=profile["display_name"],
+    )
 
 
 @app.route("/api/devices")
@@ -1998,6 +2111,9 @@ def api_device_tune():
     if not ip:
         return jsonify({"error": "IP required"}), 400
 
+    # Per-device safe envelope — the chip family decides what's safe.
+    device_bounds = chip_bounds(chip_profile_for_ip(ip))
+
     settings = {}
     for key in ("frequency", "coreVoltage", "fanspeed", "autofanspeed"):
         if key in body and body[key] is not None:
@@ -2006,8 +2122,8 @@ def api_device_tune():
             except (TypeError, ValueError):
                 return jsonify({"error": f"{key} must be a number"}), 400
 
-            if key in BOUNDS:
-                lo, hi = BOUNDS[key]
+            if key in device_bounds:
+                lo, hi = device_bounds[key]
                 if val < lo or val > hi:
                     return jsonify({"error": f"{key}={val} outside safe range {lo}-{hi}"}), 400
             settings[key] = val
@@ -2041,9 +2157,14 @@ def api_device_preset():
     body = request.get_json(force=True)
     ip = body.get("ip")
     name = body.get("preset")
-    if not ip or name not in PRESETS:
+    if not ip:
+        return jsonify({"error": "IP required"}), 400
+    # Look up the chip's preset table — Stock / Mild / Balanced / Aggressive /
+    # Max all exist per chip, but the actual MHz/mV values differ.
+    device_presets = chip_profile_for_ip(ip)["presets"]
+    if name not in device_presets:
         return jsonify({"error": "Bad preset"}), 400
-    p = PRESETS[name]
+    p = device_presets[name]
     settings = {"frequency": p["frequency"], "coreVoltage": p["coreVoltage"]}
     try:
         patch_device(ip, settings)
@@ -2152,8 +2273,11 @@ def api_autotune_start():
         if baseline["frequency"] <= 0:
             return jsonify({"error": "Couldn't read current frequency from device"}), 400
 
-        max_freq = int(body.get("max_freq") or BOUNDS["frequency"][1])
-        lo, hi = BOUNDS["frequency"]
+        # Per-chip frequency envelope — Gamma can climb to 700, Supra caps at
+        # 625, Ultra at 600. The sweep won't push past this chip's ceiling.
+        device_bounds = chip_bounds(chip_profile_for(latest.get("ASICModel")))
+        lo, hi = device_bounds["frequency"]
+        max_freq = int(body.get("max_freq") or hi)
         if max_freq < baseline["frequency"] or max_freq > hi or max_freq < lo:
             return jsonify({"error": f"max_freq must be between {baseline['frequency']} and {hi}"}), 400
 
@@ -2222,41 +2346,37 @@ def api_devices_bulk_tune():
     if len(ips) > 64:
         return jsonify({"error": "Too many devices in one call (max 64)"}), 400
 
-    # Build the settings payload once. preset and (frequency|coreVoltage) are
-    # mutually exclusive — if both arrive, preset wins (matches the single-device
-    # preset endpoint's behavior, where applying a preset overwrites manual freq/v).
+    # preset and (frequency|coreVoltage) are mutually exclusive — preset wins
+    # if both arrive. With multi-chip support, presets resolve PER-DEVICE
+    # (Gamma "Balanced" = 575/1185, Supra "Balanced" = 555/1200, etc.) so we
+    # don't build a single settings dict here — we build it inside apply_one.
     preset_name = body.get("preset")
     if preset_name:
-        if preset_name not in PRESETS:
+        # Validate the preset name exists on at least one chip (it does, since
+        # all chips share the same 5 keys: stock/mild/balanced/aggressive/max).
+        if preset_name not in CHIP_PROFILES[DEFAULT_CHIP]["presets"]:
             return jsonify({"error": f"Unknown preset: {preset_name}"}), 400
-        p = PRESETS[preset_name]
-        settings = {"frequency": p["frequency"], "coreVoltage": p["coreVoltage"]}
-        # Fan settings can still ride along with a preset (e.g. "Balanced + autofan on")
+        manual_settings = {}
+        # Fan settings can still ride along with a preset.
         for k in ("fanspeed", "autofanspeed"):
             if k in body and body[k] is not None:
-                settings[k] = body[k]
-        applied_label = p["label"]
+                manual_settings[k] = body[k]
     else:
-        settings = {}
+        manual_settings = {}
         for key in ("frequency", "coreVoltage", "fanspeed", "autofanspeed"):
             if key in body and body[key] is not None:
-                settings[key] = body[key]
-        applied_label = None
+                manual_settings[key] = body[key]
+        if not manual_settings:
+            return jsonify({"error": "No settings supplied"}), 400
 
-    if not settings:
-        return jsonify({"error": "No settings supplied"}), 400
-
-    # Validate bounds once — same logic as the single-device tune endpoint.
-    for key, val in list(settings.items()):
+    # Validate input types upfront — bounds checks are per-device inside
+    # apply_one so a Gamma 625 MHz doesn't get rejected because of an Ultra in
+    # the same batch (or vice versa).
+    for key, val in list(manual_settings.items()):
         try:
-            val = int(val)
+            manual_settings[key] = int(val)
         except (TypeError, ValueError):
             return jsonify({"error": f"{key} must be a number"}), 400
-        if key in BOUNDS:
-            lo, hi = BOUNDS[key]
-            if val < lo or val > hi:
-                return jsonify({"error": f"{key}={val} outside safe range {lo}-{hi}"}), 400
-        settings[key] = val
 
     # Only act on IPs we actually know about. Silently dropping unknown IPs
     # would be confusing; surface them in the response.
@@ -2267,6 +2387,29 @@ def api_devices_bulk_tune():
 
     def apply_one(ip):
         try:
+            # Per-device chip envelope drives both bounds + preset values.
+            profile = chip_profile_for_ip(ip)
+            device_bounds = chip_bounds(profile)
+
+            if preset_name:
+                # Apply THIS chip's version of the preset (Gamma's Balanced is
+                # 575/1185, Supra's is 555/1200, etc.). One UI gesture →
+                # chip-appropriate settings per device.
+                p = profile["presets"][preset_name]
+                settings = {"frequency": p["frequency"], "coreVoltage": p["coreVoltage"], **manual_settings}
+                applied_label = f"{p['label']} ({profile['display_name']})"
+            else:
+                settings = dict(manual_settings)
+                applied_label = None
+
+            # Per-device bounds check. A failing device gets a clear error;
+            # other devices in the batch still succeed.
+            for key, val in settings.items():
+                if key in device_bounds:
+                    lo, hi = device_bounds[key]
+                    if val < lo or val > hi:
+                        return {"ip": ip, "ok": False, "error": f"{key}={val} outside safe range {lo}-{hi} for {profile['display_name']}"}
+
             patch_device(ip, settings)
             # Reset per-device baseline so the next measurement window starts clean.
             with state_lock:
@@ -2290,10 +2433,15 @@ def api_devices_bulk_tune():
         results.append({"ip": ip, "ok": False, "error": "Device not tracked"})
 
     success_count = sum(1 for r in results if r["ok"])
+    # With multi-chip support, the actual MHz/mV applied differs per device
+    # when a preset is used (each chip's "Balanced" is its own MHz/mV pair).
+    # The per-device `applied` field on each results[] entry is the source of
+    # truth — the response surfaces the preset name + manual fan settings.
     return jsonify({
         "ok": True,
-        "applied_settings": settings,
-        "preset": applied_label,
+        "preset": preset_name,
+        "fan_settings": {k: manual_settings[k] for k in ("fanspeed", "autofanspeed") if k in manual_settings},
+        "manual_settings": {k: manual_settings[k] for k in ("frequency", "coreVoltage") if k in manual_settings},
         "results": results,
         "succeeded": success_count,
         "failed": len(results) - success_count,
