@@ -33,3 +33,7 @@ build/.update-signing-key
 # Marketing folder — Cowork-generated blog drafts + the prompt spec live here.
 # Stays local; published versions go to the bitaxe-baller-site repo's blog dir.
 BitAxe Baller Marketing/
+
+# Mobile (Capacitor) build artifacts are managed inside mobile/.gitignore;
+# this top-level entry just keeps the directory's node_modules out if anything
+# leaks upward.

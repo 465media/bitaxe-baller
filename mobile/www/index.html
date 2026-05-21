@@ -1,0 +1,449 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>Bitaxe Baller</title>
+<script>
+  // Apply theme synchronously to avoid a flash.
+  try {
+    var t = localStorage.getItem('theme');
+    if (t !== 'light' && t !== 'dark') {
+      t = (window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches) ? 'light' : 'dark';
+    }
+    document.documentElement.setAttribute('data-theme', t);
+  } catch (e) { document.documentElement.setAttribute('data-theme', 'dark'); }
+</script>
+<style>
+  :root, :root[data-theme="dark"] {
+    --bg: #0a0d0c;
+    --bg-2: #0f1413;
+    --text: #c8d4d1;
+    --dim: #5a6b66;
+    --accent: #00ff9c;
+    --accent-soft: rgba(0,255,156,0.05);
+    --warn: #ffb000;
+    --warn-soft: rgba(255,176,0,0.06);
+    --crit: #ff3860;
+    --border: #1f2b27;
+  }
+  :root[data-theme="light"] {
+    --bg: #f4f7f5;
+    --bg-2: #ffffff;
+    --text: #1a2723;
+    --dim: #6a7873;
+    --accent: #00875a;
+    --accent-soft: rgba(0,135,90,0.07);
+    --warn: #b56b00;
+    --warn-soft: rgba(181,107,0,0.08);
+    --crit: #c62a4d;
+    --border: #d8e0dc;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  [hidden] { display: none !important; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+    font-size: 15px;
+    line-height: 1.5;
+    /* Notch + bottom-safe-area padding for iPhone */
+    padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+  }
+  header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 14px 20px;
+    border-bottom: 1px solid var(--border);
+  }
+  .brand { font-weight: 700; letter-spacing: 0.05em; font-size: 14px; }
+  .brand-dot { color: var(--accent); }
+  .tag {
+    font-size: 10px;
+    color: var(--dim);
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    margin-left: 6px;
+  }
+  .status { font-size: 11px; color: var(--dim); display: flex; gap: 12px; align-items: center; }
+  .status .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--crit); display: inline-block; margin-right: 5px; vertical-align: 1px; }
+  .status .dot.connected { background: var(--accent); }
+  main { padding: 20px; max-width: 720px; margin: 0 auto; }
+
+  /* Lock + login screens */
+  .center-card {
+    max-width: 360px;
+    margin: 60px auto 30px;
+    background: var(--bg-2);
+    border: 1px solid var(--border);
+    padding: 24px 22px;
+    text-align: center;
+  }
+  .center-card h1 { margin: 0 0 8px; font-size: 18px; }
+  .center-card p { color: var(--dim); margin: 0 0 18px; font-size: 13px; line-height: 1.55; }
+  .center-card label { display: block; margin: 14px 0 6px; font-size: 11px; color: var(--dim); text-align: left; }
+  .center-card input {
+    width: 100%;
+    padding: 12px 14px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    color: var(--text);
+    font-family: inherit;
+    font-size: 15px;
+    border-radius: 0;
+    -webkit-appearance: none;
+  }
+  .center-card input:focus { outline: 1px solid var(--accent); }
+  .btn-primary {
+    margin-top: 16px;
+    padding: 13px 18px;
+    background: var(--accent);
+    color: var(--bg);
+    border: none;
+    font-family: inherit;
+    font-weight: 700;
+    font-size: 13px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    cursor: pointer;
+    width: 100%;
+    border-radius: 0;
+    -webkit-appearance: none;
+  }
+  .btn-primary:disabled { opacity: 0.5; cursor: wait; }
+  .btn-ghost {
+    margin-top: 10px;
+    padding: 11px 14px;
+    background: transparent;
+    color: var(--dim);
+    border: 1px solid var(--border);
+    font-family: inherit;
+    font-size: 12px;
+    cursor: pointer;
+    width: 100%;
+    border-radius: 0;
+    -webkit-appearance: none;
+  }
+  .err { color: var(--crit); margin-top: 12px; font-size: 12px; min-height: 16px; }
+
+  /* Fleet view */
+  .summary { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin-bottom: 16px; }
+  .summary .cell { background: var(--bg-2); border: 1px solid var(--border); padding: 12px 14px; }
+  .summary .label { font-size: 9px; text-transform: uppercase; letter-spacing: 0.1em; color: var(--dim); }
+  .summary .val { font-size: 18px; font-weight: 700; margin-top: 4px; color: var(--text); }
+  .summary .val .unit { font-size: 10px; color: var(--dim); margin-left: 5px; font-weight: 400; }
+
+  .device { background: var(--bg-2); border: 1px solid var(--border); padding: 14px; margin-bottom: 8px; border-left: 3px solid var(--dim); }
+  .device.good { border-left-color: var(--accent); }
+  .device.warn { border-left-color: var(--warn); }
+  .device.crit { border-left-color: var(--crit); }
+  .device.offline { opacity: 0.55; border-left-color: var(--crit); }
+  .device .label { font-weight: 700; font-size: 14px; }
+  .device .ip { color: var(--dim); font-size: 10px; margin-bottom: 10px; }
+  .device dl { margin: 0; display: grid; grid-template-columns: 1fr auto; gap: 3px 12px; font-size: 12px; }
+  .device dt { color: var(--dim); }
+  .device dd { margin: 0; text-align: right; }
+  .device dd .unit { color: var(--dim); margin-left: 3px; font-size: 10px; }
+
+  .empty { color: var(--dim); padding: 40px 20px; text-align: center; font-size: 13px; }
+  footer { padding: 14px 20px; color: var(--dim); font-size: 10px; text-align: center; }
+  .logout-row { display: flex; justify-content: center; padding: 14px 0 8px; }
+  .logout-link {
+    background: none; border: none; color: var(--dim); font-family: inherit;
+    font-size: 11px; text-transform: uppercase; letter-spacing: 0.1em; cursor: pointer; padding: 6px 12px;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div>
+    <span class="brand">BITAXE<span class="brand-dot">.</span>BALLER</span>
+    <span class="tag">mobile · preview</span>
+  </div>
+  <div class="status" id="status-bar" hidden>
+    <span><span class="dot" id="conn-dot"></span><span id="conn-label">connecting…</span></span>
+  </div>
+</header>
+
+<main>
+  <!-- 1. Biometric unlock prompt (returning user with stored key) -->
+  <div class="center-card" id="unlock-view" hidden>
+    <h1>Unlock</h1>
+    <p>Use Face ID or Touch ID to access your fleet.</p>
+    <button class="btn-primary" id="unlock-btn">Unlock</button>
+    <button class="btn-ghost" id="forget-btn">Forget this device</button>
+    <div class="err" id="unlock-err"></div>
+  </div>
+
+  <!-- 2. First-run / forget license entry -->
+  <div class="center-card" id="login-view" hidden>
+    <h1>Sign in</h1>
+    <p>Enter your Pro license key. It's stored on this device's secure enclave and unlocked with biometrics on every launch.</p>
+    <label for="license-key">License key</label>
+    <input id="license-key" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" inputmode="text">
+    <button class="btn-primary" id="login-btn">Save &amp; sign in</button>
+    <div class="err" id="login-err"></div>
+  </div>
+
+  <!-- 3. Fleet view -->
+  <div id="fleet-view" hidden>
+    <section class="summary">
+      <div class="cell"><div class="label">total hashrate</div><div class="val"><span id="sum-hashrate">—</span><span class="unit">GH/s</span></div></div>
+      <div class="cell"><div class="label">total power</div><div class="val"><span id="sum-power">—</span><span class="unit">W</span></div></div>
+      <div class="cell"><div class="label">avg efficiency</div><div class="val"><span id="sum-eff">—</span><span class="unit">J/TH</span></div></div>
+      <div class="cell"><div class="label">online</div><div class="val"><span id="sum-online">0</span><span class="unit" id="sum-total">/0</span></div></div>
+    </section>
+    <div id="device-list"></div>
+    <div id="empty" class="empty" hidden>No devices reported by your local app yet.</div>
+    <div class="logout-row"><button class="logout-link" id="logout-btn">Log out</button></div>
+  </div>
+</main>
+
+<footer>
+  <div>v0.1.0 — wrapper preview · talks to relay.bitaxeballer.com</div>
+</footer>
+
+<script>
+//
+// Mobile Capacitor wrapper for Bitaxe Baller.
+//
+//   Boot flow:
+//     1. Capacitor runtime ready → check Preferences for a stored license key
+//     2. If stored → show Unlock view → biometric prompt → use key
+//     3. If not    → show Login view → user pastes key → store + use
+//     4. Once we have a key → POST /login to relay → token → /ws/client → poll /api/devices every 5s
+//
+//   Storage: @capacitor/preferences (UserDefaults on iOS, SharedPreferences on
+//   Android). Biometric prompt is the access gate — the key itself lives in
+//   user-readable storage in this v0. A v1 follow-up should move it to the
+//   platform secure enclave via a secure-storage plugin, with the biometric
+//   challenge unwrapping a wrapped key. For a TestFlight demo, this is fine.
+//
+const RELAY_BASE = 'https://relay.bitaxeballer.com';
+const RELAY_WS   = 'wss://relay.bitaxeballer.com';
+const LICENSE_KEY_PREF = 'bb_license_key';
+
+const $ = (id) => document.getElementById(id);
+let ws = null;
+let pollTimer = null;
+const pending = new Map();
+let _nextId = 1;
+
+function showOnly(...ids) {
+  ['unlock-view', 'login-view', 'fleet-view', 'status-bar'].forEach((id) => {
+    const el = $(id);
+    if (el) el.hidden = !ids.includes(id);
+  });
+}
+
+async function getStoredKey() {
+  try {
+    const { value } = await Capacitor.Plugins.Preferences.get({ key: LICENSE_KEY_PREF });
+    return value || null;
+  } catch (e) { return null; }
+}
+async function storeKey(k) {
+  await Capacitor.Plugins.Preferences.set({ key: LICENSE_KEY_PREF, value: k });
+}
+async function forgetKey() {
+  await Capacitor.Plugins.Preferences.remove({ key: LICENSE_KEY_PREF });
+}
+
+// Biometric prompt. Returns true on success, throws/false otherwise.
+async function requestBiometric(reason) {
+  const { BiometricAuth } = Capacitor.Plugins;
+  if (!BiometricAuth) {
+    // Web preview / unsupported device: skip silently. Native build always has it.
+    return true;
+  }
+  try {
+    await BiometricAuth.authenticate({
+      reason,
+      cancelTitle: 'Cancel',
+      iosFallbackTitle: 'Use passcode',
+      androidTitle: 'Bitaxe Baller',
+      androidSubtitle: reason,
+      androidConfirmationRequired: false,
+    });
+    return true;
+  } catch (e) {
+    throw new Error(e && e.message || 'Biometric authentication failed');
+  }
+}
+
+async function loginAndConnect(licenseKey) {
+  // POST /login
+  const fd = new FormData();
+  fd.append('license_key', licenseKey);
+  const r = await fetch(`${RELAY_BASE}/login`, { method: 'POST', body: fd });
+  const j = await r.json();
+  if (!r.ok || !j.ok) throw new Error(j.error || `HTTP ${r.status}`);
+  const token = j.token;
+
+  // Open WS /ws/client
+  await openWs(token);
+  showOnly('fleet-view', 'status-bar');
+  startPolling();
+}
+
+function openWs(token) {
+  return new Promise((resolve, reject) => {
+    const sock = new WebSocket(`${RELAY_WS}/ws/client?token=${encodeURIComponent(token)}`);
+    sock.onopen = () => { ws = sock; setConn(true); resolve(); };
+    sock.onerror = () => { setConn(false); reject(new Error('WebSocket failed')); };
+    sock.onclose = () => {
+      setConn(false);
+      for (const [, p] of pending) {
+        clearTimeout(p.timer);
+        p.reject(new Error('WebSocket closed'));
+      }
+      pending.clear();
+    };
+    sock.onmessage = (ev) => {
+      let msg; try { msg = JSON.parse(ev.data); } catch { return; }
+      if (msg.type === 'pong') return;
+      if (msg.type !== 'response') return;
+      const id = msg.id || '';
+      const p = pending.get(id);
+      if (!p) return;
+      pending.delete(id);
+      clearTimeout(p.timer);
+      p.resolve(msg);
+    };
+  });
+}
+
+function wsRequest(method, path, body) {
+  if (!ws || ws.readyState !== 1) return Promise.reject(new Error('Not connected'));
+  const id = String(_nextId++);
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      if (pending.has(id)) {
+        pending.delete(id);
+        reject(new Error('Timeout'));
+      }
+    }, 20000);
+    pending.set(id, { resolve, reject, timer });
+    try {
+      ws.send(JSON.stringify({ type: 'request', id, method, path, body }));
+    } catch (e) {
+      pending.delete(id); clearTimeout(timer); reject(e);
+    }
+  });
+}
+
+function setConn(connected) {
+  $('conn-dot').classList.toggle('connected', connected);
+  $('conn-label').textContent = connected ? 'connected' : 'disconnected';
+}
+
+function fmt(n, d = 2) { return (n == null || !isFinite(n)) ? '—' : Number(n).toFixed(d); }
+function escapeHtml(s) { return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+function renderDevices(devices) {
+  const online = (devices || []).filter(d => d.online);
+  const totalHash = online.reduce((s, d) => s + (d.metrics?.hashRate || 0), 0);
+  const totalPower = online.reduce((s, d) => s + (d.metrics?.power || 0), 0);
+  const avgEff = totalHash > 0 ? (totalPower / (totalHash / 1000)) : 0;
+  $('sum-hashrate').textContent = totalHash > 0 ? totalHash.toFixed(0) : '—';
+  $('sum-power').textContent = totalPower > 0 ? totalPower.toFixed(1) : '—';
+  $('sum-eff').textContent = avgEff > 0 ? avgEff.toFixed(2) : '—';
+  $('sum-online').textContent = online.length;
+  $('sum-total').textContent = '/' + (devices || []).length;
+
+  const list = $('device-list');
+  const empty = $('empty');
+  if (!devices || !devices.length) { list.innerHTML = ''; empty.hidden = false; return; }
+  empty.hidden = true;
+  list.innerHTML = devices.map(d => {
+    const m = d.metrics || {};
+    const eff = d.efficiency || {};
+    const cls = !d.online ? 'offline' : (d.severity || 'good');
+    return `<div class="device ${escapeHtml(cls)}">
+      <div class="label">${escapeHtml(d.label || d.ip)}</div>
+      <div class="ip">${escapeHtml(d.ip)} · ${d.online ? escapeHtml(d.model || 'online') : 'offline'}</div>
+      <dl>
+        <dt>hashrate</dt><dd>${fmt(m.hashRate, 1)}<span class="unit">GH/s</span></dd>
+        <dt>asic</dt><dd>${fmt(m.temp, 1)}<span class="unit">°C</span></dd>
+        <dt>vreg</dt><dd>${fmt(m.vrTemp, 1)}<span class="unit">°C</span></dd>
+        <dt>power</dt><dd>${fmt(m.power, 1)}<span class="unit">W</span></dd>
+        <dt>efficiency</dt><dd>${fmt(eff.jPerTh, 2)}<span class="unit">J/TH</span></dd>
+      </dl>
+    </div>`;
+  }).join('');
+}
+
+async function pollOnce() {
+  try {
+    const resp = await wsRequest('GET', '/api/devices', null);
+    if (resp.status === 200) renderDevices(resp.body);
+  } catch (e) { /* swallow; onclose handler will resync */ }
+}
+function startPolling() { pollOnce(); pollTimer = setInterval(pollOnce, 5000); }
+function stopPolling() { if (pollTimer) { clearInterval(pollTimer); pollTimer = null; } }
+
+// ----- View handlers -----
+$('login-btn').addEventListener('click', async () => {
+  const key = $('license-key').value.trim();
+  if (!key) return;
+  const btn = $('login-btn'); btn.disabled = true; $('login-err').textContent = '';
+  try {
+    await loginAndConnect(key);
+    await storeKey(key);
+    // Prompt for biometric registration on first successful login. Skip if user dismisses;
+    // they'll get prompted on next launch anyway.
+    try { await requestBiometric('Set up Face ID / Touch ID for faster sign-in'); } catch (_) {}
+  } catch (e) {
+    $('login-err').textContent = e.message;
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+$('unlock-btn').addEventListener('click', async () => {
+  const btn = $('unlock-btn'); btn.disabled = true; $('unlock-err').textContent = '';
+  try {
+    await requestBiometric('Unlock Bitaxe Baller');
+    const key = await getStoredKey();
+    if (!key) throw new Error('No stored key — please sign in again.');
+    await loginAndConnect(key);
+  } catch (e) {
+    $('unlock-err').textContent = e.message;
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+$('forget-btn').addEventListener('click', async () => {
+  if (!confirm('Forget the saved license key on this device? You will need to enter it again next launch.')) return;
+  await forgetKey();
+  showOnly('login-view');
+});
+
+$('logout-btn').addEventListener('click', async () => {
+  stopPolling();
+  if (ws) { ws.close(); ws = null; }
+  await forgetKey();
+  showOnly('login-view');
+});
+
+// ----- Boot -----
+async function boot() {
+  // Wait for Capacitor runtime to be ready.
+  while (!window.Capacitor || !window.Capacitor.Plugins) {
+    await new Promise(r => setTimeout(r, 50));
+  }
+  const stored = await getStoredKey();
+  if (stored) showOnly('unlock-view');
+  else        showOnly('login-view');
+}
+boot();
+</script>
+
+</body>
+</html>
