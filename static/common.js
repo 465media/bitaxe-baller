@@ -641,11 +641,92 @@ function _updateProButton(active) {
   btn.setAttribute('aria-pressed', active ? 'true' : 'false');
 }
 
+// ----- Remote-access header indicator + auto-refresh -----
+// Pro users can enable remote access (relay-routed dashboard from
+// outside the LAN). We expose its state in two places:
+//   1. A small `remote ● live` pill in the header meta row, so you can
+//      tell at a glance whether your fleet is reachable from off-LAN.
+//   2. Live in the Pro modal — when open, the modal's Remote-access
+//      section reflects the same state without needing close + reopen.
+// One always-on poll every 5s feeds both surfaces. Free tier still hits
+// the endpoint but the response carries pro_active:false and the pill
+// stays hidden, so the cost is one cheap GET per 5s.
+
+function _injectRemoteIndicator() {
+  const meta = document.querySelector('header .meta');
+  if (!meta || document.getElementById('remote-meta')) return;
+  const div = document.createElement('div');
+  div.id = 'remote-meta';
+  div.hidden = true;
+  div.setAttribute('data-tip',
+    'Remote access status. Green = connected to relay.bitaxeballer.com. Yellow = enabled but reconnecting. Manage via the Pro button.');
+  div.innerHTML = 'remote <span class="v" id="remote-meta-status">●</span> <span class="v" id="remote-meta-label">—</span>';
+  // Place before the Pro/hash/theme toggles so the natural reading order
+  // is telemetry → remote status → action buttons.
+  const before =
+    document.getElementById('pro-toggle') ||
+    document.getElementById('hash-unit-toggle') ||
+    document.getElementById('theme-toggle');
+  if (before) meta.insertBefore(div, before);
+  else meta.appendChild(div);
+}
+
+let _remotePollTimer = null;
+
+async function _refreshRemoteStatus() {
+  try {
+    const s = await api('/api/remote/status');
+    _applyRemoteStatusUI(s);
+    return s;
+  } catch (e) {
+    return null;
+  }
+}
+
+function _applyRemoteStatusUI(s) {
+  // Header pill — visibility gated on configured.enabled so the
+  // indicator only appears for users who've turned remote access on.
+  const meta = document.getElementById('remote-meta');
+  if (meta) {
+    const enabled = !!(s && s.configured && s.configured.enabled);
+    const connected = !!(s && s.runtime && s.runtime.connected);
+    meta.hidden = !enabled;
+    if (enabled) {
+      const dot = document.getElementById('remote-meta-status');
+      const label = document.getElementById('remote-meta-label');
+      if (dot) dot.className = 'v remote-dot ' + (connected ? 'on' : 'pending');
+      if (label) label.textContent = connected ? 'live' : '…';
+    }
+  }
+  // Pro modal section in place — only when modal is open. Re-binds the
+  // toggle handler since outerHTML replaces the node reference.
+  const wrap = document.getElementById('pro-modal');
+  if (wrap && !wrap.hidden) {
+    const proSection = wrap.querySelector('.remote-section');
+    if (proSection && s) {
+      const isDev = !!wrap.querySelector('.pro-active-badge.dev');
+      proSection.outerHTML = _renderRemoteAccessSection(s, isDev);
+      const newToggle = document.getElementById('remote-toggle');
+      if (newToggle) newToggle.addEventListener('click', _handleRemoteToggle);
+    }
+  }
+}
+
+function _startRemotePolling() {
+  if (_remotePollTimer) return;
+  _refreshRemoteStatus();
+  _remotePollTimer = setInterval(_refreshRemoteStatus, 5000);
+}
+
 window.addEventListener('DOMContentLoaded', () => {
   _injectProButton();
+  _injectRemoteIndicator();
   // Lazily check status on load so the button reflects state without forcing
   // the user to open the modal. Single request, fire-and-forget.
   api('/api/license/status').then(s => _updateProButton(s.active)).catch(() => {});
+  // Start the always-on remote-status poll. Cheap GET; both header pill +
+  // open Pro modal share the result.
+  _startRemotePolling();
 });
 
 window.openProModal = openProModal;
