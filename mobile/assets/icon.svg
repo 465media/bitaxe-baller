@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <title>Bitaxe Baller icon</title>
+  <desc>Bitaxe Baller pickaxe icon on dark background.</desc>
+
+  <rect x="0" y="0" width="512" height="512" fill="#0a0d0c"/>
+
+  <g transform="translate(256, 240) rotate(-30) scale(1.15)">
+    <path d="M -178 30 Q -150 18 -120 0 Q -70 -42 -30 -32 Q -12 -28 0 -22 Q 12 -28 30 -32 Q 70 -42 120 0 Q 150 18 178 30 Q 168 36 156 34 Q 100 22 50 10 Q 22 4 0 4 Q -22 4 -50 10 Q -100 22 -156 34 Q -168 36 -178 30 Z" fill="#00ff9c"/>
+    <rect x="-10" y="0" width="20" height="118" rx="2" fill="#00ff9c"/>
+    <rect x="-15" y="116" width="30" height="10" rx="2" fill="#00ff9c"/>
+  </g>
+</svg>

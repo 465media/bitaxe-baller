@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 2732 2732" width="2732" height="2732">
+  <rect x="0" y="0" width="2732" height="2732" fill="#0a0d0c"/>
+  <g transform="translate(1366, 1280) rotate(-30) scale(2.3)">
+    <path d="M -178 30 Q -150 18 -120 0 Q -70 -42 -30 -32 Q -12 -28 0 -22 Q 12 -28 30 -32 Q 70 -42 120 0 Q 150 18 178 30 Q 168 36 156 34 Q 100 22 50 10 Q 22 4 0 4 Q -22 4 -50 10 Q -100 22 -156 34 Q -168 36 -178 30 Z" fill="#00ff9c"/>
+    <rect x="-10" y="0" width="20" height="118" rx="2" fill="#00ff9c"/>
+    <rect x="-15" y="116" width="30" height="10" rx="2" fill="#00ff9c"/>
+  </g>
+  <text x="1366" y="1900" text-anchor="middle" fill="#00ff9c" font-family="ui-monospace, monospace" font-size="120" font-weight="700" letter-spacing="6">BITAXE.BALLER</text>
+  <text x="1366" y="1990" text-anchor="middle" fill="#5a6b66" font-family="ui-monospace, monospace" font-size="46" letter-spacing="8">REMOTE · MOBILE</text>
+</svg>
