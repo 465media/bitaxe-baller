@@ -14,7 +14,7 @@
 ; piling up side-by-side. If we ever fork or rename, generate a new one.
 
 #define MyAppName       "Bitaxe Baller"
-#define MyAppVersion    "1.9.0"
+#define MyAppVersion    "1.9.1"
 #define MyAppPublisher  "465 Media"
 #define MyAppURL        "https://bitaxeballer.com"
 #define MyAppExeName    "Bitaxe Baller.exe"

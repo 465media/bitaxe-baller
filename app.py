@@ -28,7 +28,7 @@ import relay_client
 # Info.plist/EXE version and the dashboard footer template should both
 # match this string. Update bump checklist: APP_VERSION here, the spec's
 # version="..." entries, and the v1.X.Y string in dashboard.html + device.html.
-APP_VERSION = "1.9.0"
+APP_VERSION = "1.9.1"
 
 
 # Test-mode override: pretend to be an older version so the auto-update flow

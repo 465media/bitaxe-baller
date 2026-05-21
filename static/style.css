@@ -144,6 +144,14 @@
   }
   .meta .v { color: var(--text); }
   .meta .v.live { color: var(--accent); }
+  /* Remote-access indicator dot. Green + pulses when connected to relay;
+     amber and static when enabled but reconnecting. Hidden parent #remote-meta
+     is shown only when remote_access.enabled (see _applyRemoteStatusUI). */
+  .meta .v.remote-dot.on {
+    color: var(--accent);
+    animation: blink 1.2s steps(2) infinite;
+  }
+  .meta .v.remote-dot.pending { color: var(--warn); }
 
   .summary {
     position: relative; z-index: 1;
