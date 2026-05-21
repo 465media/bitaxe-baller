@@ -43,9 +43,9 @@
     letter-spacing: 0.1em;
     margin-left: 8px;
   }
-  .status { font-size: 12px; color: var(--muted); display: flex; gap: 16px; }
+  .status { font-size: 12px; color: var(--muted); display: flex; gap: 16px; align-items: center; }
   .status .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--crit); margin-right: 6px; vertical-align: 1px; }
-  .status .dot.connected { background: var(--good); }
+  .status .dot.connected { background: var(--good); box-shadow: 0 0 6px var(--good); }
   main { padding: 24px; max-width: 1200px; margin: 0 auto; }
   .login {
     max-width: 440px;
@@ -83,6 +83,23 @@
   }
   .login button:disabled { opacity: 0.5; cursor: wait; }
   .err { color: var(--crit); margin-top: 12px; font-size: 13px; min-height: 18px; }
+
+  .summary {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 12px;
+    margin-bottom: 20px;
+  }
+  .summary .cell {
+    background: var(--card);
+    border: 1px solid var(--border);
+    padding: 14px 16px;
+  }
+  .summary .label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.1em; color: var(--muted); }
+  .summary .val { font-size: 22px; font-weight: 700; margin-top: 6px; color: var(--fg); }
+  .summary .val .unit { font-size: 11px; color: var(--muted); margin-left: 6px; font-weight: 400; }
+  .summary .sub { font-size: 11px; color: var(--muted); margin-top: 4px; }
+
   .device-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; }
   .device {
     background: var(--card);
@@ -93,13 +110,26 @@
   .device.good { border-left-color: var(--good); }
   .device.warn { border-left-color: var(--warn); }
   .device.crit { border-left-color: var(--crit); }
-  .device.offline { opacity: 0.5; }
+  .device.offline { opacity: 0.55; border-left-color: var(--crit); }
   .device .label { font-weight: 700; font-size: 14px; margin-bottom: 4px; }
   .device .ip { color: var(--muted); font-size: 11px; margin-bottom: 12px; }
   .device dl { margin: 0; display: grid; grid-template-columns: 1fr auto; gap: 4px 12px; font-size: 12px; }
   .device dt { color: var(--muted); }
   .device dd { margin: 0; text-align: right; }
+  .device dd .unit { color: var(--muted); margin-left: 3px; font-size: 10px; }
+  .device dd.warn { color: var(--warn); }
+  .device dd.crit { color: var(--crit); }
+
   .empty { color: var(--muted); padding: 60px 20px; text-align: center; }
+  .disclaimer {
+    background: rgba(224, 176, 74, 0.05);
+    border: 1px solid rgba(224, 176, 74, 0.25);
+    color: var(--warn);
+    padding: 12px 16px;
+    margin: 20px 0;
+    font-size: 11px;
+    line-height: 1.55;
+  }
   footer { padding: 20px 24px; color: var(--muted); font-size: 11px; text-align: center; }
   .logout {
     background: none;
@@ -110,6 +140,7 @@
     font-size: 11px;
     cursor: pointer;
   }
+  .logout:hover { color: var(--fg); border-color: var(--muted); }
 </style>
 </head>
 <body>
@@ -138,8 +169,35 @@
   </div>
 
   <div id="dashboard-view" hidden>
+    <section class="summary">
+      <div class="cell">
+        <div class="label">total hashrate</div>
+        <div class="val"><span id="sum-hashrate">—</span><span class="unit">GH/s</span></div>
+        <div class="sub"><span id="sum-hashrate-th">—</span> TH/s combined</div>
+      </div>
+      <div class="cell">
+        <div class="label">total power</div>
+        <div class="val"><span id="sum-power">—</span><span class="unit">W</span></div>
+        <div class="sub">fleet draw</div>
+      </div>
+      <div class="cell">
+        <div class="label">avg efficiency</div>
+        <div class="val"><span id="sum-eff">—</span><span class="unit">J/TH</span></div>
+        <div class="sub">lower is better</div>
+      </div>
+      <div class="cell">
+        <div class="label">online</div>
+        <div class="val"><span id="sum-online">0</span><span class="unit" id="sum-total">/0</span></div>
+        <div class="sub">devices reachable</div>
+      </div>
+    </section>
+
     <div id="device-list" class="device-list"></div>
-    <div id="empty" class="empty" hidden>No devices reported by the app yet. The app may still be polling.</div>
+    <div id="empty" class="empty" hidden>No devices reported by the app yet. Add devices in the LAN dashboard.</div>
+
+    <div class="disclaimer">
+      ⚠ Read-only preview. Tuning, scanning, and adding devices stay on the LAN dashboard for now — this remote view is for monitoring.
+    </div>
   </div>
 </main>
 
@@ -152,12 +210,27 @@ const TOKEN_KEY = 'bb_token';
 const $ = (id) => document.getElementById(id);
 let ws = null;
 let pollTimer = null;
-let pending = null;  // single in-flight WS request (we serialize for v0)
+let pending = new Map();  // client_id → { resolve, reject, timer }
+let _nextId = 1;
 
 function showError(el, msg) { el.textContent = msg || ''; }
 function fmt(n, d = 2) { return (n == null || !isFinite(n)) ? '—' : Number(n).toFixed(d); }
 function escapeHtml(s) { return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 
+// ----- Severity helpers — mirror the LAN dashboard's tempClass / effClass thresholds
+function tempClass(t, isAsic) {
+  if (t == null || !isFinite(t)) return '';
+  if (isAsic) {
+    if (t < 60) return ''; if (t < 65) return 'warn'; return 'crit';
+  }
+  if (t < 70) return ''; if (t < 80) return 'warn'; return 'crit';
+}
+function effClass(e) {
+  if (!e || e <= 0) return '';
+  if (e < 18) return ''; if (e < 22) return 'warn'; return 'crit';
+}
+
+// ----- WS request — concurrent-safe by client_id
 async function login(licenseKey) {
   const fd = new FormData();
   fd.append('license_key', licenseKey);
@@ -175,25 +248,46 @@ function openWs(token) {
     sock.onerror = () => { setConnected(false); reject(new Error('WebSocket failed')); };
     sock.onclose = () => {
       setConnected(false);
-      if (pending) { pending.reject(new Error('WebSocket closed')); pending = null; }
+      // Reject every in-flight request — they're not coming back.
+      for (const [id, p] of pending) {
+        clearTimeout(p.timer);
+        p.reject(new Error('WebSocket closed'));
+      }
+      pending.clear();
     };
     sock.onmessage = (ev) => {
       let msg;
       try { msg = JSON.parse(ev.data); } catch { return; }
       if (msg.type === 'pong') return;
       if (msg.type !== 'response') return;
-      if (pending) { const p = pending; pending = null; p.resolve(msg); }
+      const id = msg.id || '';
+      const p = pending.get(id);
+      if (!p) return;  // stale or unsolicited
+      pending.delete(id);
+      clearTimeout(p.timer);
+      p.resolve(msg);
     };
   });
 }
 
 function wsRequest(method, path, body) {
   if (!ws || ws.readyState !== 1) return Promise.reject(new Error('Not connected'));
-  if (pending) return Promise.reject(new Error('Request in flight'));
+  const id = String(_nextId++);
   return new Promise((resolve, reject) => {
-    pending = { resolve, reject };
-    ws.send(JSON.stringify({ type: 'request', method, path, body }));
-    setTimeout(() => { if (pending) { pending.reject(new Error('Timeout')); pending = null; } }, 20000);
+    const timer = setTimeout(() => {
+      if (pending.has(id)) {
+        pending.delete(id);
+        reject(new Error('Timeout'));
+      }
+    }, 20000);
+    pending.set(id, { resolve, reject, timer });
+    try {
+      ws.send(JSON.stringify({ type: 'request', id, method, path, body }));
+    } catch (e) {
+      pending.delete(id);
+      clearTimeout(timer);
+      reject(e);
+    }
   });
 }
 
@@ -207,7 +301,21 @@ function classifySeverity(dev) {
   return dev.severity || 'good';
 }
 
+function renderSummary(devices) {
+  const online = devices.filter(d => d.online);
+  const totalHash = online.reduce((s, d) => s + (d.metrics?.hashRate || 0), 0);
+  const totalPower = online.reduce((s, d) => s + (d.metrics?.power || 0), 0);
+  const avgEff = totalHash > 0 ? (totalPower / (totalHash / 1000)) : 0;
+  $('sum-hashrate').textContent = totalHash > 0 ? totalHash.toFixed(0) : '—';
+  $('sum-hashrate-th').textContent = totalHash > 0 ? (totalHash / 1000).toFixed(2) : '—';
+  $('sum-power').textContent = totalPower > 0 ? totalPower.toFixed(1) : '—';
+  $('sum-eff').textContent = avgEff > 0 ? avgEff.toFixed(2) : '—';
+  $('sum-online').textContent = online.length;
+  $('sum-total').textContent = '/' + devices.length;
+}
+
 function renderDevices(devices) {
+  renderSummary(devices);
   const list = $('device-list');
   const empty = $('empty');
   if (!devices || !devices.length) {
@@ -217,22 +325,22 @@ function renderDevices(devices) {
   }
   empty.hidden = true;
   list.innerHTML = devices.map(d => {
-    const m = d.latest || {};
+    const m = d.metrics || {};
+    const eff = d.efficiency || {};
     const cls = classifySeverity(d);
-    const hash = m.hashRate;
-    const tempAsic = m.temp;
-    const tempVR = m.vrTemp;
-    const fan = m.fanrpm;
-    const power = m.power;
+    const asicCls = tempClass(m.temp, true);
+    const vrCls = tempClass(m.vrTemp, false);
+    const effCls = effClass(eff.jPerTh);
     return `<div class="device ${escapeHtml(cls)}">
       <div class="label">${escapeHtml(d.label || d.ip)}</div>
-      <div class="ip">${escapeHtml(d.ip)} · ${d.online ? 'online' : 'offline'}</div>
+      <div class="ip">${escapeHtml(d.ip)} · ${d.online ? escapeHtml(d.model || 'online') : 'offline'}</div>
       <dl>
-        <dt>hashrate</dt><dd>${fmt(hash, 1)} GH/s</dd>
-        <dt>asic °C</dt><dd>${fmt(tempAsic, 1)}</dd>
-        <dt>vreg °C</dt><dd>${fmt(tempVR, 1)}</dd>
-        <dt>fan</dt><dd>${fmt(fan, 0)} rpm</dd>
-        <dt>power</dt><dd>${fmt(power, 1)} W</dd>
+        <dt>hashrate</dt><dd>${fmt(m.hashRate, 1)}<span class="unit">GH/s</span></dd>
+        <dt>asic temp</dt><dd class="${asicCls}">${fmt(m.temp, 1)}<span class="unit">°C</span></dd>
+        <dt>vreg temp</dt><dd class="${vrCls}">${fmt(m.vrTemp, 1)}<span class="unit">°C</span></dd>
+        <dt>fan</dt><dd>${fmt(m.fanSpeed, 0)}<span class="unit">rpm</span></dd>
+        <dt>power</dt><dd>${fmt(m.power, 1)}<span class="unit">W</span></dd>
+        <dt>efficiency</dt><dd class="${effCls}">${fmt(eff.jPerTh, 2)}<span class="unit">J/TH</span></dd>
       </dl>
     </div>`;
   }).join('');
@@ -243,7 +351,7 @@ async function pollOnce() {
     const resp = await wsRequest('GET', '/api/devices', null);
     if (resp.status === 200) renderDevices(resp.body);
   } catch (e) {
-    // swallow — onclose handler will resync
+    // swallow — onclose handler will resync once reconnected
   }
 }
 

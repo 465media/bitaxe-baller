@@ -229,18 +229,23 @@ async def _handle_client_request(client_ws: WebSocket, license_key: str, msg: di
         await client_ws.send_text(json.dumps({"type": "pong"}))
         return
 
+    # Capture the client-allocated id (if any) so responses can be matched
+    # back. The relay still mints its own id for the app conversation,
+    # since clients sharing a license key could otherwise collide.
+    client_id = msg.get("id") if isinstance(msg, dict) else None
+
     try:
         method, path, body = protocol.validate_client_request(msg)
     except ValueError as e:
         await client_ws.send_text(json.dumps(
-            protocol.make_error_response(msg.get("id") if isinstance(msg, dict) else "", 400, str(e))
+            protocol.make_error_response(client_id or "", 400, str(e))
         ))
         return
 
     conn = registry.get_app(license_key)
     if conn is None:
         await client_ws.send_text(json.dumps(
-            protocol.make_error_response("", 502, "App is not connected to the relay.")
+            protocol.make_error_response(client_id or "", 502, "App is not connected to the relay.")
         ))
         return
 
@@ -255,7 +260,7 @@ async def _handle_client_request(client_ws: WebSocket, license_key: str, msg: di
     except Exception as e:
         conn.pending.pop(req_id, None)
         await client_ws.send_text(json.dumps(
-            protocol.make_error_response("", 502, f"Failed to reach app: {e.__class__.__name__}")
+            protocol.make_error_response(client_id or "", 502, f"Failed to reach app: {e.__class__.__name__}")
         ))
         return
 
@@ -264,21 +269,21 @@ async def _handle_client_request(client_ws: WebSocket, license_key: str, msg: di
     except asyncio.TimeoutError:
         conn.pending.pop(req_id, None)
         await client_ws.send_text(json.dumps(
-            protocol.make_error_response("", 504, "App did not respond in time.")
+            protocol.make_error_response(client_id or "", 504, "App did not respond in time.")
         ))
         return
     except Exception as e:
         await client_ws.send_text(json.dumps(
-            protocol.make_error_response("", 502, str(e))
+            protocol.make_error_response(client_id or "", 502, str(e))
         ))
         return
 
-    # Pass the app response straight through, but stamp the client-visible
-    # id field empty (clients on the same socket don't need it — they
-    # receive responses in the order they sent requests in v0).
+    # Stamp the client's original id on the way out so they can match
+    # this response to their request. If they didn't supply one we emit
+    # empty rather than the relay's internal id — never leak that.
     out = dict(response_msg)
     out["type"] = "response"
-    out.pop("id", None)
+    out["id"] = client_id or ""
     await client_ws.send_text(json.dumps(out))
 
 
