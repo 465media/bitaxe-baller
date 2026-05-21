@@ -17,12 +17,25 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import ssl
 import threading
 import time
 from typing import Any, Optional
 
 import requests
 import websockets
+
+# certifi ships a Mozilla CA bundle. The `requests` library already uses it
+# implicitly; we need it explicitly for websockets because the stdlib's
+# ssl.create_default_context() defaults to the system CA chain, which on
+# macOS Homebrew Python and on PyInstaller-frozen builds doesn't reliably
+# find roots like Let's Encrypt / DigiCert. With certifi.where() the chain
+# resolves identically across dev (source) and prod (.app/.exe bundle).
+try:
+    import certifi
+    _CA_BUNDLE: Optional[str] = certifi.where()
+except ImportError:
+    _CA_BUNDLE = None
 
 
 log = logging.getLogger("relay_client")
@@ -171,6 +184,9 @@ async def _connect_and_serve(
     url = relay_url.rstrip("/") + "/ws/app"
     headers = [("Authorization", f"Bearer {license_key}")]
     log.info("relay connecting url=%s", url)
+    ssl_ctx = None
+    if url.startswith("wss://"):
+        ssl_ctx = ssl.create_default_context(cafile=_CA_BUNDLE) if _CA_BUNDLE else ssl.create_default_context()
     async with websockets.connect(
         url,
         additional_headers=headers,
@@ -179,6 +195,7 @@ async def _connect_and_serve(
         ping_interval=30,
         ping_timeout=15,
         max_size=_MAX_MESSAGE_BYTES,
+        ssl=ssl_ctx,
     ) as ws:
         _update(connected=True, connected_since=time.time(), last_error="")
         log.info("relay connected url=%s", url)
