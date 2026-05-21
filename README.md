@@ -1,6 +1,6 @@
 # Bitaxe Baller
 
-**v1.8.2** — Live dashboard + tuner for Bitaxe miners on your local network. Native desktop app for Mac and Windows. Click the icon, a window opens with every Bitaxe on your network — temps, hashrate, tuning recommendations, pool config. Other devices on your LAN reach the same dashboard at `http://bitaxe-baller.local`. Free, MIT-licensed, no telemetry.
+**v1.9.0** — Live dashboard + tuner for Bitaxe miners on your local network. Native desktop app for Mac and Windows. Click the icon, a window opens with every Bitaxe on your network — temps, hashrate, tuning recommendations, pool config. Other devices on your LAN reach the same dashboard at `http://bitaxe-baller.local`. **New in v1.9.0:** Pro users can reach their dashboard from outside the LAN via the bitaxeballer.com relay — outbound-only, license-key auth, one-click toggle. Free, MIT-licensed, no telemetry.
 
 <p align="center">
   <img src="screenshots/home.jpg" alt="Bitaxe Baller home view — compact card per device with health border colors" width="900">
@@ -85,6 +85,21 @@ Click any card → full detail page.
 
 Click **⚡ scan network** on the home toolbar to auto-discover Bitaxes on your LAN. The scanner probes every IP in the host's `/24` in parallel, hits each one's `/api/system/info` with a 1.5 s timeout, and returns the ones that respond like Bitaxes (`hashRate` + `ASICModel`). Already-added devices and the host itself are skipped. A full /24 typically completes in 3–6 seconds. Only RFC1918 private ranges are scanned.
 
+## Remote access (Pro, v1.9.0+)
+
+Pro users can reach their dashboard from anywhere — no port forwarding, no VPN.
+
+The desktop app opens an outbound WebSocket to `relay.bitaxeballer.com`; remote browsers (and, eventually, mobile apps) hit the same relay and get routed to the right local app socket. License key is the credential. Toggle it on/off in the Pro modal — one click.
+
+```
+  desktop app  ──outbound WSS──►  relay.bitaxeballer.com  ◄──WSS──  browser
+  (license-key auth)              (in-memory router)               (session token, 24h)
+```
+
+The relay is dumb — it validates the license, allow-lists `/api/*` paths, caps message size, and forwards opaque JSON. All product logic stays in the local app, so the server-side safety bounds (frequency 400–700 MHz, voltage 1000–1300 mV, etc.) apply identically over the relay. Read-only home view in v1.9.0; tuning over the relay is on the v1.9.x list.
+
+Remote dashboard lives at `https://relay.bitaxeballer.com/`. Sign in with your license key, you're in.
+
 ## LAN access — three ways to reach the dashboard
 
 The app binds to `0.0.0.0` by default, so any device on your network can use the dashboard. Pick whichever URL is easiest:
@@ -159,6 +174,10 @@ Columns: timestamp, ISO time, hashrate, ASIC temp, VR temp, power, voltage (meas
 - ~~Auto-tune sweep mode (frequency steps with HW-error guardrails)~~ ✅
 - ~~Long-term history (persistent SQLite, weeks/months of metrics)~~ ✅
 - ~~Discord alerts on offline or temperature thresholds~~ ✅
+
+### Shipped in v1.9.0 (Pro)
+
+- ~~Remote access — reach your dashboard from outside the LAN via the bitaxeballer.com relay~~ ✅
 
 ### Still to ship
 

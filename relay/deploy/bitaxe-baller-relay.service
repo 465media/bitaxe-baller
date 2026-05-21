@@ -1,0 +1,39 @@
+[Unit]
+Description=Bitaxe Baller remote-access relay
+Documentation=https://github.com/465media/bitaxe-baller/tree/main/relay
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=bitaxe-relay
+Group=bitaxe-relay
+WorkingDirectory=/opt/bitaxe-baller-relay
+EnvironmentFile=/etc/bitaxe-baller-relay.env
+ExecStart=/opt/bitaxe-baller-relay/venv/bin/uvicorn \
+    --app-dir /opt/bitaxe-baller-relay \
+    main:app \
+    --host 127.0.0.1 \
+    --port 8787 \
+    --proxy-headers \
+    --forwarded-allow-ips '127.0.0.1'
+Restart=on-failure
+RestartSec=3
+# Bound the blast radius of any compromise — the relay reads nothing on
+# disk (state is in-memory), so harden the filesystem.
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+LockPersonality=true
+MemoryDenyWriteExecute=false
+RestrictRealtime=true
+SystemCallArchitectures=native
+
+[Install]
+WantedBy=multi-user.target

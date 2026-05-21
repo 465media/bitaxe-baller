@@ -1,0 +1,72 @@
+# nginx server block for relay.bitaxeballer.com
+#
+# Drop this into /etc/nginx/sites-available/relay.bitaxeballer.com (or
+# wherever the existing bitaxeballer.com site lives), symlink into
+# sites-enabled/, and `nginx -t && systemctl reload nginx`.
+#
+# Assumes you've already issued a Let's Encrypt cert via certbot for
+# `relay.bitaxeballer.com` — easiest path is to add it to the existing
+# bitaxeballer.com cert:
+#
+#     certbot --nginx -d relay.bitaxeballer.com -d bitaxeballer.com -d www.bitaxeballer.com
+#
+# certbot rewrites the listen + ssl directives below in place; what's
+# here is the pre-certbot baseline.
+
+# HTTP → HTTPS redirect. certbot adds this automatically; leaving it
+# explicit here so the file makes sense if you read it cold.
+server {
+    listen 80;
+    listen [::]:80;
+    server_name relay.bitaxeballer.com;
+    return 301 https://$host$request_uri;
+}
+
+server {
+    listen 443 ssl http2;
+    listen [::]:443 ssl http2;
+    server_name relay.bitaxeballer.com;
+
+    # certbot fills these in.
+    # ssl_certificate     /etc/letsencrypt/live/bitaxeballer.com/fullchain.pem;
+    # ssl_certificate_key /etc/letsencrypt/live/bitaxeballer.com/privkey.pem;
+
+    # The relay caps individual messages at 256 KB; give nginx a little
+    # headroom for headers + smaller-than-cap request bodies.
+    client_max_body_size 512K;
+
+    # Modest access logging — relay traffic is steady but quiet.
+    access_log /var/log/nginx/relay-access.log;
+    error_log  /var/log/nginx/relay-error.log warn;
+
+    # The relay binds to 127.0.0.1:8787 (see bitaxe-baller-relay.service).
+    # The single upstream is intentional — relay is single-instance for
+    # launch; a future Redis-backed multi-instance setup would change this.
+    location / {
+        proxy_pass http://127.0.0.1:8787;
+        proxy_http_version 1.1;
+        # WebSocket upgrade headers. The /ws/app and /ws/client routes
+        # need these; HTTP routes (/, /health, /login) ignore them.
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection $connection_upgrade;
+        proxy_set_header Host              $host;
+        proxy_set_header X-Real-IP         $remote_addr;
+        proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+
+        # WS idle timeouts: keep them generous. The relay's own idle
+        # disconnect (default 1h of no client traffic) is the source of
+        # truth; nginx just needs to not kill connections sooner.
+        proxy_read_timeout  3600s;
+        proxy_send_timeout  3600s;
+    }
+}
+
+# Required in the http {} block (usually /etc/nginx/nginx.conf) — maps
+# the Upgrade header so the proxy_set_header above does the right thing.
+# Add this once at the http {} level if it isn't already there:
+#
+#     map $http_upgrade $connection_upgrade {
+#         default upgrade;
+#         ''      close;
+#     }
