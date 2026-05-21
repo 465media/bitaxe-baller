@@ -497,6 +497,11 @@ async function _renderProModal() {
   _updateProButton(status.active);
   if (status.active) {
     const isDev = !!status.dev_mode;
+    // Fetch remote-access status in parallel-ish so the modal stays snappy. We
+    // already know Pro is active so the endpoint will give back a real
+    // configured/runtime block rather than a 402.
+    let remote = null;
+    try { remote = await api('/api/remote/status'); } catch (_) { /* show modal without it */ }
     body.innerHTML = `
       <div class="pro-active">
         <div class="pro-active-badge ${isDev ? 'dev' : ''}">${_proIconHtml()}<span>${isDev ? 'Dev override — Pro features unlocked locally' : 'Active on this machine'}</span></div>
@@ -507,6 +512,7 @@ async function _renderProModal() {
           ${status.key_suffix ? `<dt>Key</dt><dd>••••-${escapeHtml(status.key_suffix)}</dd>` : ''}
           ${status.expires_at ? `<dt>Renews</dt><dd>${escapeHtml(new Date(status.expires_at).toLocaleDateString())}</dd>` : ''}
         </dl>
+        ${remote ? _renderRemoteAccessSection(remote, isDev) : ''}
         ${isDev ? '' : `
           <p class="pro-fineprint">Deactivating frees this slot so you can move your license to another machine. Your subscription stays active.</p>
           <div class="pro-actions">
@@ -517,6 +523,8 @@ async function _renderProModal() {
     `;
     const deact = document.getElementById('pro-deactivate');
     if (deact) deact.addEventListener('click', _handleDeactivate);
+    const remoteToggle = document.getElementById('remote-toggle');
+    if (remoteToggle) remoteToggle.addEventListener('click', _handleRemoteToggle);
   } else {
     body.innerHTML = `
       <p class="pro-blurb">Paste the license key you received from Polar after purchase. Free tier features keep working either way.</p>
@@ -531,6 +539,59 @@ async function _renderProModal() {
       </form>
     `;
     document.getElementById('pro-activate-form').addEventListener('submit', _handleActivate);
+  }
+}
+
+function _renderRemoteAccessSection(remote, isDev) {
+  // remote = { configured: {enabled, relay_url}, runtime: {connected, last_error, connected_since, ...} }
+  const cfg = remote.configured || {};
+  const rt = remote.runtime || {};
+  const enabled = !!cfg.enabled;
+  const connected = !!rt.connected;
+  const stateClass = !enabled ? 'off' : (connected ? 'on' : 'pending');
+  const stateLabel = !enabled ? 'Disabled' : (connected ? 'Connected' : (rt.last_error ? 'Disconnected' : 'Connecting…'));
+  const btnLabel = enabled ? 'Turn off' : 'Turn on';
+  // In dev mode the real license key isn't in config — the relay would reject
+  // the empty bearer. Show the section but lock the toggle with an explanation.
+  const lockedNote = isDev
+    ? '<p class="remote-fineprint">Dev override mode — remote access needs a real activated license. Activate Pro for real to test this.</p>'
+    : '';
+  return `
+    <section class="remote-section">
+      <div class="remote-head">
+        <div class="remote-title">Remote access</div>
+        <div class="remote-state ${stateClass}">
+          <span class="remote-dot"></span>${escapeHtml(stateLabel)}
+        </div>
+      </div>
+      <p class="remote-blurb">Reach this dashboard from outside your LAN. The app opens an outbound connection to <code>${escapeHtml(cfg.relay_url || '')}</code> — no inbound port to forward.</p>
+      ${enabled && rt.last_error ? `<p class="remote-error">${escapeHtml(rt.last_error)}</p>` : ''}
+      ${lockedNote}
+      <div class="pro-actions">
+        <button class="${enabled ? 'pro-btn-ghost' : 'primary'}" id="remote-toggle" data-enabled="${enabled}" ${isDev ? 'disabled' : ''}>${btnLabel}</button>
+      </div>
+    </section>
+  `;
+}
+
+async function _handleRemoteToggle(ev) {
+  const btn = ev.currentTarget;
+  const wasEnabled = btn.getAttribute('data-enabled') === 'true';
+  btn.disabled = true;
+  btn.textContent = wasEnabled ? 'Turning off…' : 'Turning on…';
+  try {
+    if (wasEnabled) {
+      await api('/api/remote/disable', 'POST', {});
+      toast('Remote access turned off', 'info');
+    } else {
+      await api('/api/remote/enable', 'POST', {});
+      toast('Remote access enabled — connecting…', 'info');
+    }
+    await _renderProModal();
+  } catch (e) {
+    toast('Could not toggle remote access: ' + (e.message || e), 'error');
+    btn.disabled = false;
+    btn.textContent = wasEnabled ? 'Turn off' : 'Turn on';
   }
 }
 

@@ -2025,3 +2025,65 @@
     padding-top: 12px;
     border-top: 1px solid var(--border);
   }
+  .remote-section {
+    border-top: 1px solid var(--border);
+    margin: 16px 0;
+    padding-top: 16px;
+  }
+  .remote-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    margin-bottom: 8px;
+  }
+  .remote-title {
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--text);
+    letter-spacing: 0.04em;
+  }
+  .remote-state {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--dim);
+  }
+  .remote-state .remote-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--dim);
+    display: inline-block;
+  }
+  .remote-state.on .remote-dot { background: var(--good, #6ad6a8); box-shadow: 0 0 6px var(--good, #6ad6a8); }
+  .remote-state.pending .remote-dot { background: var(--warn, #e0b04a); }
+  .remote-state.off .remote-dot { background: var(--dim); }
+  .remote-blurb {
+    color: var(--dim);
+    font-size: 12px;
+    margin: 0 0 12px;
+    line-height: 1.5;
+  }
+  .remote-blurb code {
+    background: var(--bg-deep, var(--bg));
+    padding: 1px 6px;
+    border-radius: 3px;
+    font-size: 11px;
+  }
+  .remote-error {
+    background: rgba(224, 96, 74, 0.08);
+    border: 1px solid rgba(224, 96, 74, 0.3);
+    color: var(--crit, #e0604a);
+    padding: 8px 10px;
+    font-size: 11px;
+    margin: 0 0 12px;
+    font-family: inherit;
+  }
+  .remote-fineprint {
+    color: var(--dim);
+    font-size: 11px;
+    margin: 0 0 12px;
+  }

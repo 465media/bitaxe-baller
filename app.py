@@ -1508,7 +1508,13 @@ def api_remote_enable():
         }), 400
 
     body = request.get_json(silent=True) or {}
-    relay_url = (body.get("relay_url") or "").strip() or relay_client.default_relay_url()
+    # Order of preference: explicit body override → previously-configured URL
+    # → production default. The middle case matters: if the user has been
+    # pointing at a custom relay (staging, self-hosted) and toggles off/on,
+    # we should preserve that, not silently reset them to the prod URL.
+    relay_url = (body.get("relay_url") or "").strip()
+    if not relay_url:
+        relay_url = (_remote_access_cfg().get("relay_url") or "").strip() or relay_client.default_relay_url()
     if not (relay_url.startswith("ws://") or relay_url.startswith("wss://")):
         return jsonify({"error": "relay_url must start with ws:// or wss://"}), 400
 
