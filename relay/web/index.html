@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Bitaxe Baller — Remote</title>
+<style>
+  :root {
+    --bg: #0a0d0c;
+    --fg: #d6e0db;
+    --muted: #7a8a83;
+    --accent: #6ad6a8;
+    --warn: #e0b04a;
+    --crit: #e0604a;
+    --good: #6ad6a8;
+    --card: #131817;
+    --border: #1f2826;
+  }
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--fg);
+    font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 14px;
+    line-height: 1.5;
+    min-height: 100vh;
+  }
+  header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 18px 24px;
+    border-bottom: 1px solid var(--border);
+  }
+  .brand { font-weight: 700; letter-spacing: 0.05em; }
+  .brand-dot { color: var(--accent); }
+  .preview-tag {
+    font-size: 11px;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    margin-left: 8px;
+  }
+  .status { font-size: 12px; color: var(--muted); display: flex; gap: 16px; }
+  .status .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--crit); margin-right: 6px; vertical-align: 1px; }
+  .status .dot.connected { background: var(--good); }
+  main { padding: 24px; max-width: 1200px; margin: 0 auto; }
+  .login {
+    max-width: 440px;
+    margin: 80px auto;
+    background: var(--card);
+    border: 1px solid var(--border);
+    padding: 28px;
+  }
+  .login h1 { margin: 0 0 8px; font-size: 20px; }
+  .login p { color: var(--muted); margin: 0 0 20px; font-size: 13px; }
+  .login label { display: block; margin: 16px 0 6px; font-size: 12px; color: var(--muted); }
+  .login input {
+    width: 100%;
+    padding: 10px 12px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    color: var(--fg);
+    font-family: inherit;
+    font-size: 14px;
+  }
+  .login input:focus { outline: 1px solid var(--accent); }
+  .login button {
+    margin-top: 20px;
+    padding: 10px 18px;
+    background: var(--accent);
+    color: var(--bg);
+    border: none;
+    font-family: inherit;
+    font-weight: 700;
+    font-size: 13px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    cursor: pointer;
+    width: 100%;
+  }
+  .login button:disabled { opacity: 0.5; cursor: wait; }
+  .err { color: var(--crit); margin-top: 12px; font-size: 13px; min-height: 18px; }
+  .device-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; }
+  .device {
+    background: var(--card);
+    border: 1px solid var(--border);
+    padding: 16px;
+    border-left: 3px solid var(--muted);
+  }
+  .device.good { border-left-color: var(--good); }
+  .device.warn { border-left-color: var(--warn); }
+  .device.crit { border-left-color: var(--crit); }
+  .device.offline { opacity: 0.5; }
+  .device .label { font-weight: 700; font-size: 14px; margin-bottom: 4px; }
+  .device .ip { color: var(--muted); font-size: 11px; margin-bottom: 12px; }
+  .device dl { margin: 0; display: grid; grid-template-columns: 1fr auto; gap: 4px 12px; font-size: 12px; }
+  .device dt { color: var(--muted); }
+  .device dd { margin: 0; text-align: right; }
+  .empty { color: var(--muted); padding: 60px 20px; text-align: center; }
+  footer { padding: 20px 24px; color: var(--muted); font-size: 11px; text-align: center; }
+  .logout {
+    background: none;
+    border: 1px solid var(--border);
+    color: var(--muted);
+    padding: 4px 10px;
+    font-family: inherit;
+    font-size: 11px;
+    cursor: pointer;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div>
+    <span class="brand">BITAXE<span class="brand-dot">.</span>BALLER</span>
+    <span class="preview-tag">remote · preview</span>
+  </div>
+  <div class="status" id="status-bar" hidden>
+    <span><span class="dot" id="conn-dot"></span><span id="conn-label">connecting…</span></span>
+    <button class="logout" id="logout-btn">log out</button>
+  </div>
+</header>
+
+<main>
+  <div class="login" id="login-view">
+    <h1>Sign in</h1>
+    <p>Enter your Pro license key to access your fleet remotely. The key is the one we emailed when you bought Pro.</p>
+    <form id="login-form">
+      <label for="license-key">License key</label>
+      <input id="license-key" name="license-key" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" required>
+      <button type="submit" id="login-btn">Sign in</button>
+      <div class="err" id="login-err"></div>
+    </form>
+  </div>
+
+  <div id="dashboard-view" hidden>
+    <div id="device-list" class="device-list"></div>
+    <div id="empty" class="empty" hidden>No devices reported by the app yet. The app may still be polling.</div>
+  </div>
+</main>
+
+<footer>
+  Hosted by the relay. Disable remote access in the desktop app to revoke instantly.
+</footer>
+
+<script>
+const TOKEN_KEY = 'bb_token';
+const $ = (id) => document.getElementById(id);
+let ws = null;
+let pollTimer = null;
+let pending = null;  // single in-flight WS request (we serialize for v0)
+
+function showError(el, msg) { el.textContent = msg || ''; }
+function fmt(n, d = 2) { return (n == null || !isFinite(n)) ? '—' : Number(n).toFixed(d); }
+function escapeHtml(s) { return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+async function login(licenseKey) {
+  const fd = new FormData();
+  fd.append('license_key', licenseKey);
+  const r = await fetch('/login', { method: 'POST', body: fd });
+  const j = await r.json();
+  if (!r.ok || !j.ok) throw new Error(j.error || `HTTP ${r.status}`);
+  return j.token;
+}
+
+function openWs(token) {
+  return new Promise((resolve, reject) => {
+    const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const sock = new WebSocket(`${proto}//${location.host}/ws/client?token=${encodeURIComponent(token)}`);
+    sock.onopen = () => { setConnected(true); resolve(sock); };
+    sock.onerror = () => { setConnected(false); reject(new Error('WebSocket failed')); };
+    sock.onclose = () => {
+      setConnected(false);
+      if (pending) { pending.reject(new Error('WebSocket closed')); pending = null; }
+    };
+    sock.onmessage = (ev) => {
+      let msg;
+      try { msg = JSON.parse(ev.data); } catch { return; }
+      if (msg.type === 'pong') return;
+      if (msg.type !== 'response') return;
+      if (pending) { const p = pending; pending = null; p.resolve(msg); }
+    };
+  });
+}
+
+function wsRequest(method, path, body) {
+  if (!ws || ws.readyState !== 1) return Promise.reject(new Error('Not connected'));
+  if (pending) return Promise.reject(new Error('Request in flight'));
+  return new Promise((resolve, reject) => {
+    pending = { resolve, reject };
+    ws.send(JSON.stringify({ type: 'request', method, path, body }));
+    setTimeout(() => { if (pending) { pending.reject(new Error('Timeout')); pending = null; } }, 20000);
+  });
+}
+
+function setConnected(connected) {
+  $('conn-dot').classList.toggle('connected', connected);
+  $('conn-label').textContent = connected ? 'connected' : 'disconnected';
+}
+
+function classifySeverity(dev) {
+  if (!dev.online) return 'offline';
+  return dev.severity || 'good';
+}
+
+function renderDevices(devices) {
+  const list = $('device-list');
+  const empty = $('empty');
+  if (!devices || !devices.length) {
+    list.innerHTML = '';
+    empty.hidden = false;
+    return;
+  }
+  empty.hidden = true;
+  list.innerHTML = devices.map(d => {
+    const m = d.latest || {};
+    const cls = classifySeverity(d);
+    const hash = m.hashRate;
+    const tempAsic = m.temp;
+    const tempVR = m.vrTemp;
+    const fan = m.fanrpm;
+    const power = m.power;
+    return `<div class="device ${escapeHtml(cls)}">
+      <div class="label">${escapeHtml(d.label || d.ip)}</div>
+      <div class="ip">${escapeHtml(d.ip)} · ${d.online ? 'online' : 'offline'}</div>
+      <dl>
+        <dt>hashrate</dt><dd>${fmt(hash, 1)} GH/s</dd>
+        <dt>asic °C</dt><dd>${fmt(tempAsic, 1)}</dd>
+        <dt>vreg °C</dt><dd>${fmt(tempVR, 1)}</dd>
+        <dt>fan</dt><dd>${fmt(fan, 0)} rpm</dd>
+        <dt>power</dt><dd>${fmt(power, 1)} W</dd>
+      </dl>
+    </div>`;
+  }).join('');
+}
+
+async function pollOnce() {
+  try {
+    const resp = await wsRequest('GET', '/api/devices', null);
+    if (resp.status === 200) renderDevices(resp.body);
+  } catch (e) {
+    // swallow — onclose handler will resync
+  }
+}
+
+function startPolling() {
+  pollOnce();
+  pollTimer = setInterval(pollOnce, 5000);
+}
+
+function stopPolling() {
+  if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+}
+
+function showDashboard() {
+  $('login-view').hidden = true;
+  $('dashboard-view').hidden = false;
+  $('status-bar').hidden = false;
+}
+
+function showLogin() {
+  $('login-view').hidden = false;
+  $('dashboard-view').hidden = true;
+  $('status-bar').hidden = true;
+}
+
+async function connectWithToken(token) {
+  try {
+    ws = await openWs(token);
+    showDashboard();
+    startPolling();
+  } catch (e) {
+    localStorage.removeItem(TOKEN_KEY);
+    showLogin();
+    showError($('login-err'), e.message);
+  }
+}
+
+$('login-form').addEventListener('submit', async (ev) => {
+  ev.preventDefault();
+  const key = $('license-key').value.trim();
+  if (!key) return;
+  const btn = $('login-btn');
+  btn.disabled = true;
+  showError($('login-err'), '');
+  try {
+    const token = await login(key);
+    localStorage.setItem(TOKEN_KEY, token);
+    await connectWithToken(token);
+  } catch (e) {
+    showError($('login-err'), e.message);
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+$('logout-btn').addEventListener('click', () => {
+  localStorage.removeItem(TOKEN_KEY);
+  stopPolling();
+  if (ws) { ws.close(); ws = null; }
+  showLogin();
+});
+
+// Boot: if we have a token, try to use it.
+const saved = localStorage.getItem(TOKEN_KEY);
+if (saved) connectWithToken(saved);
+</script>
+
+</body>
+</html>

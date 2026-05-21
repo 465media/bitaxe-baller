@@ -16,6 +16,8 @@ import logging
 import time
 from typing import Optional
 
+from pathlib import Path
+
 from fastapi import (
     FastAPI,
     Form,
@@ -25,7 +27,7 @@ from fastapi import (
     WebSocketDisconnect,
     status,
 )
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
 
 import config
 import licensing
@@ -60,6 +62,16 @@ async def lifespan(_app: FastAPI):
 
 
 app = FastAPI(title="bitaxe-baller-relay", lifespan=lifespan)
+
+
+_WEB_DIR = Path(__file__).parent / "web"
+
+
+@app.get("/")
+def index():
+    """Single-page client. Login form + minimal dashboard. The browser then
+    talks to the relay via WS on the same origin, so no CORS dance."""
+    return FileResponse(_WEB_DIR / "index.html")
 
 
 @app.get("/health")
