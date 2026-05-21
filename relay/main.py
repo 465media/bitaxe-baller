@@ -27,6 +27,7 @@ from fastapi import (
     WebSocketDisconnect,
     status,
 )
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 
 import config
@@ -62,6 +63,23 @@ async def lifespan(_app: FastAPI):
 
 
 app = FastAPI(title="bitaxe-baller-relay", lifespan=lifespan)
+
+# CORS: the mobile Capacitor wrapper runs from https://localhost (Android) or
+# capacitor://localhost (iOS) and needs to fetch /login from this origin.
+# WebSockets aren't CORS-checked, so it's the HTTP routes that need this.
+# We're permissive (allow_origins=["*"]) because:
+#   - the license key in POST /login is body-auth, not a cookie,
+#   - allow_credentials=False so no cookies/auth headers cross-origin,
+#   - the only HTTP routes here are /, /health, /login — none mutate state
+#     based on the requester's origin.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=False,
+    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_headers=["*"],
+    max_age=86400,
+)
 
 
 _WEB_DIR = Path(__file__).parent / "web"
