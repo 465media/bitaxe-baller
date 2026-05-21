@@ -3,4 +3,5 @@ requests>=2.31
 zeroconf>=0.131
 pywebview>=5.0
 pynacl>=1.5
+websockets>=12.0
 

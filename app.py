@@ -21,6 +21,8 @@ from concurrent.futures import ThreadPoolExecutor
 import requests
 from flask import Flask, jsonify, render_template, request
 
+import relay_client
+
 
 # Single source of truth for the app version. The PyInstaller spec's
 # Info.plist/EXE version and the dashboard footer template should both
@@ -1432,6 +1434,105 @@ def api_license_deactivate():
         return jsonify({"ok": True, "license": {"active": False}})
 
 
+# ----- Pro: remote access (relay-routed dashboard) -----
+# The desktop app opens an outbound WSS to relay.bitaxeballer.com when
+# the user enables remote access. The relay routes inbound requests
+# (from remote browsers or mobile clients) onto our local /api/* endpoints.
+# All product logic stays here; the relay is dumb routing. See ./relay/
+# for the relay service, ./relay_client.py for the connector here.
+
+def _remote_access_cfg() -> dict:
+    """Stored shape: {enabled: bool, relay_url: str}. Missing means disabled."""
+    cfg = load_config()
+    raw = cfg.get("remote_access") or {}
+    return {
+        "enabled": bool(raw.get("enabled")),
+        "relay_url": raw.get("relay_url") or relay_client.default_relay_url(),
+    }
+
+
+def _save_remote_access_cfg(enabled: bool, relay_url: str) -> None:
+    with config_lock:
+        cfg = load_config()
+        cfg["remote_access"] = {"enabled": bool(enabled), "relay_url": relay_url}
+        save_config(cfg)
+
+
+def _maybe_start_relay_client(app_port: int) -> None:
+    """Called once on startup. Starts the connector if (a) Pro is active and
+    (b) the user has enabled remote access. Silent no-op otherwise."""
+    if not is_pro_active():
+        return
+    rc = _remote_access_cfg()
+    if not rc["enabled"]:
+        return
+    lic = _get_license()
+    key = (lic.get("key") or "").strip() if lic else ""
+    if not key:
+        return
+    try:
+        relay_client.start(
+            key,
+            relay_url=rc["relay_url"],
+            app_port=app_port,
+            app_version=APP_VERSION,
+        )
+    except Exception as e:
+        print(f"[relay] could not start connector: {type(e).__name__}: {e}", file=sys.stderr)
+
+
+@app.route("/api/remote/status", methods=["GET"])
+def api_remote_status():
+    cfg = _remote_access_cfg()
+    return jsonify({
+        "pro_required": True,
+        "pro_active": is_pro_active(),
+        "configured": cfg,
+        "runtime": relay_client.get_status(),
+    })
+
+
+@app.route("/api/remote/enable", methods=["POST"])
+def api_remote_enable():
+    if not is_pro_active():
+        return jsonify({"error": "Remote access is a Pro feature."}), 402
+
+    lic = _get_license()
+    key = (lic.get("key") or "").strip() if lic else ""
+    if not key:
+        # is_pro_active() returned true so there should be a key; dev override
+        # is the one path where there isn't, and we can't relay-route requests
+        # without a real license key — the relay rejects empty bearers.
+        return jsonify({
+            "error": "Remote access needs a real license key. Activate Pro first.",
+        }), 400
+
+    body = request.get_json(silent=True) or {}
+    relay_url = (body.get("relay_url") or "").strip() or relay_client.default_relay_url()
+    if not (relay_url.startswith("ws://") or relay_url.startswith("wss://")):
+        return jsonify({"error": "relay_url must start with ws:// or wss://"}), 400
+
+    _save_remote_access_cfg(enabled=True, relay_url=relay_url)
+
+    # Restart the connector with the new URL if it was already running.
+    if relay_client.is_running():
+        relay_client.stop()
+    relay_client.start(
+        key,
+        relay_url=relay_url,
+        app_port=PORT,
+        app_version=APP_VERSION,
+    )
+    return jsonify({"ok": True, "status": relay_client.get_status()})
+
+
+@app.route("/api/remote/disable", methods=["POST"])
+def api_remote_disable():
+    _save_remote_access_cfg(enabled=False, relay_url=_remote_access_cfg()["relay_url"])
+    relay_client.stop()
+    return jsonify({"ok": True, "status": relay_client.get_status()})
+
+
 def _is_private_v4(ip):
     """Cheap RFC1918 check so we don't accidentally scan a public range."""
     try:
@@ -2544,6 +2645,8 @@ def _run_webview(zc, info) -> None:
         print("[webview] Flask did not start listening within 8s — aborting", file=sys.stderr)
         return
 
+    _maybe_start_relay_client(PORT)
+
     try:
         webview.create_window(
             title="Bitaxe Baller",
@@ -2616,6 +2719,10 @@ def main():
         # Source mode: Flask blocks the main thread, dev opens their own tab.
         if _should_auto_open_browser():
             _open_browser_when_ready(_url("localhost", PORT))
+        # Outbound relay connection (Pro). Safe to start before Flask is
+        # listening — only the loopback HTTP dispatch needs Flask up, and
+        # that only fires when a remote client actually sends a request.
+        _maybe_start_relay_client(PORT)
         try:
             app.run(host=HOST, port=PORT, debug=False, use_reloader=False)
         finally:
