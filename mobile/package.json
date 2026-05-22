@@ -4,7 +4,8 @@
   "private": true,
   "description": "Capacitor wrapper for Bitaxe Baller — iOS + Android apps that talk to relay.bitaxeballer.com",
   "scripts": {
-    "build": "node scripts/build-web.mjs",
+    "bundle-plugins": "esbuild src/plugins.js --bundle --format=iife --outfile=www/plugins.js --platform=browser --target=es2020 --minify",
+    "build": "npm run bundle-plugins",
     "sync": "npm run build && cap sync",
     "ios": "npm run sync && cap run ios",
     "android": "npm run sync && cap run android",
@@ -20,6 +21,7 @@
     "@capacitor/preferences": "^8.0.1"
   },
   "devDependencies": {
-    "@capacitor/assets": "^3.0.5"
+    "@capacitor/assets": "^3.0.5",
+    "esbuild": "^0.28.0"
   }
 }

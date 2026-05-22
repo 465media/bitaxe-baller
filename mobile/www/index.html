@@ -214,6 +214,12 @@
   <div>v0.1.0 — wrapper preview · talks to relay.bitaxeballer.com</div>
 </footer>
 
+<!-- Plugin bundle: imports @aparajita/capacitor-biometric-auth and
+     @capacitor/preferences so they register their proxies on
+     Capacitor.Plugins.* and on window.BB_*. Built by esbuild from
+     src/plugins.js; rerun `npm run build` after editing that file. -->
+<script src="plugins.js"></script>
+
 <script>
 //
 // Mobile Capacitor wrapper for Bitaxe Baller.
@@ -249,37 +255,36 @@ function showOnly(...ids) {
 
 async function getStoredKey() {
   try {
-    const { value } = await Capacitor.Plugins.Preferences.get({ key: LICENSE_KEY_PREF });
+    const { value } = await window.BB_Preferences.get({ key: LICENSE_KEY_PREF });
     return value || null;
   } catch (e) { return null; }
 }
 async function storeKey(k) {
-  await Capacitor.Plugins.Preferences.set({ key: LICENSE_KEY_PREF, value: k });
+  await window.BB_Preferences.set({ key: LICENSE_KEY_PREF, value: k });
 }
 async function forgetKey() {
-  await Capacitor.Plugins.Preferences.remove({ key: LICENSE_KEY_PREF });
+  await window.BB_Preferences.remove({ key: LICENSE_KEY_PREF });
 }
 
-// Biometric prompt. Returns true on success, throws/false otherwise.
+// Biometric prompt. Returns true on success, throws on failure / cancellation.
+// Hard-fails (no silent passthrough) when the plugin isn't loaded — earlier
+// version silently returned true, which let the app open without actually
+// authenticating. If you're testing in a plain web browser without the
+// Capacitor native bridge, this will throw — that's the correct behavior.
 async function requestBiometric(reason) {
-  const { BiometricAuth } = Capacitor.Plugins;
+  const BiometricAuth = window.BB_BiometricAuth;
   if (!BiometricAuth) {
-    // Web preview / unsupported device: skip silently. Native build always has it.
-    return true;
+    throw new Error('Biometric plugin not loaded (plugins.js missing?).');
   }
-  try {
-    await BiometricAuth.authenticate({
-      reason,
-      cancelTitle: 'Cancel',
-      iosFallbackTitle: 'Use passcode',
-      androidTitle: 'Bitaxe Baller',
-      androidSubtitle: reason,
-      androidConfirmationRequired: false,
-    });
-    return true;
-  } catch (e) {
-    throw new Error(e && e.message || 'Biometric authentication failed');
-  }
+  await BiometricAuth.authenticate({
+    reason,
+    cancelTitle: 'Cancel',
+    iosFallbackTitle: 'Use passcode',
+    androidTitle: 'Bitaxe Baller',
+    androidSubtitle: reason,
+    androidConfirmationRequired: false,
+  });
+  return true;
 }
 
 async function loginAndConnect(licenseKey) {
@@ -443,8 +448,10 @@ $('logout-btn').addEventListener('click', async () => {
 
 // ----- Boot -----
 async function boot() {
-  // Wait for Capacitor runtime to be ready.
-  while (!window.Capacitor || !window.Capacitor.Plugins) {
+  // Wait for Capacitor runtime AND our bundled plugin proxies to be ready.
+  // plugins.js is a sync <script> tag so this is usually instant, but the
+  // native bridge can lag by a tick on first launch.
+  while (!window.Capacitor || !window.Capacitor.Plugins || !window.BB_BiometricAuth || !window.BB_Preferences) {
     await new Promise(r => setTimeout(r, 50));
   }
   const stored = await getStoredKey();
