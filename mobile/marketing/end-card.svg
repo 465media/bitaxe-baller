@@ -1,0 +1,43 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1290 2796" width="1290" height="2796">
+  <title>App preview video end card — 3-second still frame at 1290×2796 (iPhone 15 Pro Max native)</title>
+  <desc>Last 3 seconds of the app preview video. Pickaxe icon + wordmark + CTA on dark background. Match brand palette.</desc>
+
+  <rect x="0" y="0" width="1290" height="2796" fill="#0a0d0c"/>
+
+  <!-- Subtle grid texture -->
+  <g stroke="#1f2b27" stroke-width="1" opacity="0.35">
+    <line x1="0" y1="932" x2="1290" y2="932"/>
+    <line x1="0" y1="1398" x2="1290" y2="1398"/>
+    <line x1="0" y1="1864" x2="1290" y2="1864"/>
+  </g>
+
+  <!-- Pickaxe icon, large + centered -->
+  <g transform="translate(645, 1100) rotate(-30) scale(1.6)">
+    <path d="M -178 30 Q -150 18 -120 0 Q -70 -42 -30 -32 Q -12 -28 0 -22 Q 12 -28 30 -32 Q 70 -42 120 0 Q 150 18 178 30 Q 168 36 156 34 Q 100 22 50 10 Q 22 4 0 4 Q -22 4 -50 10 Q -100 22 -156 34 Q -168 36 -178 30 Z" fill="#00ff9c"/>
+    <rect x="-10" y="0" width="20" height="118" rx="2" fill="#00ff9c"/>
+    <rect x="-15" y="116" width="30" height="10" rx="2" fill="#00ff9c"/>
+  </g>
+
+  <!-- Wordmark -->
+  <text x="645" y="1640" fill="#00ff9c" font-family="'JetBrains Mono', ui-monospace, monospace" font-size="120" font-weight="700" letter-spacing="6" text-anchor="middle">
+    BITAXE<tspan fill="#00ff9c">.</tspan><tspan fill="#c8d4d1">BALLER</tspan>
+  </text>
+
+  <!-- Subtitle -->
+  <text x="645" y="1720" fill="#5a6b66" font-family="'JetBrains Mono', monospace" font-size="42" letter-spacing="6" text-anchor="middle">
+    YOUR FLEET, FROM ANYWHERE
+  </text>
+
+  <!-- Spacer + CTA box -->
+  <g transform="translate(645, 1880)">
+    <rect x="-380" y="0" width="760" height="120" fill="rgba(0,255,156,0.08)" stroke="#00ff9c" stroke-width="2"/>
+    <text x="0" y="78" fill="#00ff9c" font-family="'JetBrains Mono', monospace" font-size="52" font-weight="700" letter-spacing="3" text-anchor="middle">
+      bitaxeballer.com
+    </text>
+  </g>
+
+  <!-- Bottom-anchored hint -->
+  <text x="645" y="2660" fill="#5a6b66" font-family="'JetBrains Mono', monospace" font-size="28" letter-spacing="3" text-anchor="middle">
+    FREE WITH PRO · MONITOR FROM ANYWHERE
+  </text>
+</svg>
