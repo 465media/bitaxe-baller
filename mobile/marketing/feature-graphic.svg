@@ -1,0 +1,130 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 500" width="1024" height="500">
+  <title>Bitaxe Baller — Google Play feature graphic</title>
+  <desc>1024x500 horizontal banner for the Play Store listing. Brand wordmark + pickaxe at left, stylized phone showing the fleet view at right, accent green details on dark background.</desc>
+
+  <defs>
+    <linearGradient id="bg-grad" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0a0d0c"/>
+      <stop offset="1" stop-color="#0f1413"/>
+    </linearGradient>
+    <linearGradient id="accent-glow" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#00ff9c" stop-opacity="0.12"/>
+      <stop offset="1" stop-color="#00ff9c" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Background -->
+  <rect x="0" y="0" width="1024" height="500" fill="url(#bg-grad)"/>
+
+  <!-- Subtle grid lines for techy texture -->
+  <g stroke="#1f2b27" stroke-width="1" opacity="0.4">
+    <line x1="0" y1="100" x2="1024" y2="100"/>
+    <line x1="0" y1="200" x2="1024" y2="200"/>
+    <line x1="0" y1="300" x2="1024" y2="300"/>
+    <line x1="0" y1="400" x2="1024" y2="400"/>
+  </g>
+
+  <!-- Glow column behind the wordmark -->
+  <rect x="0" y="0" width="640" height="500" fill="url(#accent-glow)"/>
+
+  <!-- Pickaxe icon (lifted from build/icons/icon.svg, recolored + repositioned) -->
+  <g transform="translate(96, 200) rotate(-30) scale(0.65)">
+    <path d="M -178 30 Q -150 18 -120 0 Q -70 -42 -30 -32 Q -12 -28 0 -22 Q 12 -28 30 -32 Q 70 -42 120 0 Q 150 18 178 30 Q 168 36 156 34 Q 100 22 50 10 Q 22 4 0 4 Q -22 4 -50 10 Q -100 22 -156 34 Q -168 36 -178 30 Z" fill="#00ff9c"/>
+    <rect x="-10" y="0" width="20" height="118" rx="2" fill="#00ff9c"/>
+    <rect x="-15" y="116" width="30" height="10" rx="2" fill="#00ff9c"/>
+  </g>
+
+  <!-- Wordmark -->
+  <text x="96" y="290" fill="#00ff9c" font-family="'JetBrains Mono', ui-monospace, monospace" font-size="64" font-weight="700" letter-spacing="2">
+    BITAXE<tspan fill="#00ff9c">.</tspan><tspan fill="#c8d4d1">BALLER</tspan>
+  </text>
+
+  <!-- Tagline -->
+  <text x="96" y="332" fill="#5a6b66" font-family="'JetBrains Mono', ui-monospace, monospace" font-size="22" font-weight="400" letter-spacing="3">
+    YOUR FLEET, FROM ANYWHERE
+  </text>
+
+  <!-- Three feature pills -->
+  <g transform="translate(96, 372)" font-family="'JetBrains Mono', ui-monospace, monospace" font-size="14" font-weight="700" letter-spacing="1.5">
+    <g>
+      <rect x="0" y="0" width="148" height="32" fill="rgba(0,255,156,0.08)" stroke="#00ff9c" stroke-width="1"/>
+      <text x="74" y="22" fill="#00ff9c" text-anchor="middle">FACE ID GATED</text>
+    </g>
+    <g transform="translate(160, 0)">
+      <rect x="0" y="0" width="180" height="32" fill="rgba(0,255,156,0.08)" stroke="#00ff9c" stroke-width="1"/>
+      <text x="90" y="22" fill="#00ff9c" text-anchor="middle">LIVE HASHRATE</text>
+    </g>
+    <g transform="translate(352, 0)">
+      <rect x="0" y="0" width="180" height="32" fill="rgba(0,255,156,0.08)" stroke="#00ff9c" stroke-width="1"/>
+      <text x="90" y="22" fill="#00ff9c" text-anchor="middle">PRO HISTORY</text>
+    </g>
+  </g>
+
+  <!-- Stylized phone mock at right -->
+  <g transform="translate(720, 60)">
+    <!-- Phone outer body -->
+    <rect x="0" y="0" width="240" height="380" rx="28" fill="#0a0d0c" stroke="#1f2b27" stroke-width="2"/>
+    <!-- Screen -->
+    <rect x="10" y="42" width="220" height="328" rx="6" fill="#0f1413"/>
+    <!-- Notch -->
+    <rect x="92" y="14" width="56" height="14" rx="7" fill="#0a0d0c"/>
+
+    <!-- App content: header + summary cells + device cards -->
+    <g transform="translate(10, 42)">
+      <!-- Brand bar -->
+      <text x="14" y="22" fill="#c8d4d1" font-family="'JetBrains Mono', monospace" font-size="11" font-weight="700">BITAXE<tspan fill="#00ff9c">.</tspan>BALLER</text>
+      <text x="14" y="36" fill="#5a6b66" font-family="'JetBrains Mono', monospace" font-size="7">REMOTE · MOBILE</text>
+
+      <!-- Status pill (right) -->
+      <circle cx="198" cy="22" r="3" fill="#00ff9c"/>
+      <text x="206" y="25" fill="#5a6b66" font-family="'JetBrains Mono', monospace" font-size="8">live</text>
+
+      <!-- Summary cells row 1 -->
+      <g transform="translate(14, 56)">
+        <rect x="0" y="0" width="89" height="46" fill="#0a0d0c" stroke="#1f2b27"/>
+        <text x="6" y="13" fill="#5a6b66" font-family="'JetBrains Mono', monospace" font-size="6">TOTAL HASHRATE</text>
+        <text x="6" y="34" fill="#c8d4d1" font-family="'JetBrains Mono', monospace" font-size="16" font-weight="700">3.7<tspan fill="#5a6b66" font-size="9"> TH/s</tspan></text>
+
+        <rect x="97" y="0" width="89" height="46" fill="#0a0d0c" stroke="#1f2b27"/>
+        <text x="103" y="13" fill="#5a6b66" font-family="'JetBrains Mono', monospace" font-size="6">TOTAL POWER</text>
+        <text x="103" y="34" fill="#c8d4d1" font-family="'JetBrains Mono', monospace" font-size="16" font-weight="700">51<tspan fill="#5a6b66" font-size="9"> W</tspan></text>
+      </g>
+
+      <!-- Device cards -->
+      <g transform="translate(14, 112)">
+        <!-- card 1 (good) -->
+        <rect x="0" y="0" width="186" height="44" fill="#0a0d0c" stroke="#1f2b27"/>
+        <rect x="0" y="0" width="3" height="44" fill="#00ff9c"/>
+        <text x="10" y="14" fill="#c8d4d1" font-family="'JetBrains Mono', monospace" font-size="9" font-weight="700">gamma-01</text>
+        <text x="10" y="26" fill="#5a6b66" font-family="'JetBrains Mono', monospace" font-size="6">192.168.1.50 · BM1370</text>
+        <text x="10" y="38" fill="#c8d4d1" font-family="'JetBrains Mono', monospace" font-size="9">1240 GH/s · 62°C · 17W</text>
+
+        <!-- card 2 (warn) -->
+        <rect x="0" y="50" width="186" height="44" fill="#0a0d0c" stroke="#1f2b27"/>
+        <rect x="0" y="50" width="3" height="44" fill="#ffb000"/>
+        <text x="10" y="64" fill="#c8d4d1" font-family="'JetBrains Mono', monospace" font-size="9" font-weight="700">gamma-02</text>
+        <text x="10" y="76" fill="#5a6b66" font-family="'JetBrains Mono', monospace" font-size="6">192.168.1.51 · BM1370</text>
+        <text x="10" y="88" fill="#c8d4d1" font-family="'JetBrains Mono', monospace" font-size="9">1180 GH/s · <tspan fill="#ffb000">68°C</tspan> · 18W</text>
+
+        <!-- card 3 (good) -->
+        <rect x="0" y="100" width="186" height="44" fill="#0a0d0c" stroke="#1f2b27"/>
+        <rect x="0" y="100" width="3" height="44" fill="#00ff9c"/>
+        <text x="10" y="114" fill="#c8d4d1" font-family="'JetBrains Mono', monospace" font-size="9" font-weight="700">supra-01</text>
+        <text x="10" y="126" fill="#5a6b66" font-family="'JetBrains Mono', monospace" font-size="6">192.168.1.52 · BM1368</text>
+        <text x="10" y="138" fill="#c8d4d1" font-family="'JetBrains Mono', monospace" font-size="9">1340 GH/s · 60°C · 16W</text>
+      </g>
+
+      <!-- Tiny chart sketch at the bottom -->
+      <g transform="translate(14, 268)">
+        <text x="0" y="10" fill="#5a6b66" font-family="'JetBrains Mono', monospace" font-size="6">HASHRATE · LAST 1H</text>
+        <polyline points="0,40 24,32 48,36 72,28 96,24 120,28 144,20 168,24 186,18" fill="none" stroke="#00ff9c" stroke-width="1.5"/>
+        <polyline points="0,40 24,32 48,36 72,28 96,24 120,28 144,20 168,24 186,18 186,52 0,52 0,40" fill="rgba(0,255,156,0.12)" stroke="none"/>
+      </g>
+    </g>
+  </g>
+
+  <!-- Bottom-right URL stamp -->
+  <text x="1010" y="478" fill="#5a6b66" font-family="'JetBrains Mono', monospace" font-size="14" letter-spacing="2" text-anchor="end">
+    bitaxeballer.com
+  </text>
+</svg>
