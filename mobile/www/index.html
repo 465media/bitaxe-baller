@@ -411,8 +411,10 @@ $('login-btn').addEventListener('click', async () => {
   }
 });
 
-$('unlock-btn').addEventListener('click', async () => {
-  const btn = $('unlock-btn'); btn.disabled = true; $('unlock-err').textContent = '';
+async function tryUnlock() {
+  const btn = $('unlock-btn');
+  if (btn.disabled) return;  // re-entrancy guard (auto-fire + double-tap)
+  btn.disabled = true; $('unlock-err').textContent = '';
   try {
     await requestBiometric('Unlock Bitaxe Baller');
     const key = await getStoredKey();
@@ -423,7 +425,8 @@ $('unlock-btn').addEventListener('click', async () => {
   } finally {
     btn.disabled = false;
   }
-});
+}
+$('unlock-btn').addEventListener('click', tryUnlock);
 
 $('forget-btn').addEventListener('click', async () => {
   if (!confirm('Forget the saved license key on this device? You will need to enter it again next launch.')) return;
@@ -445,8 +448,17 @@ async function boot() {
     await new Promise(r => setTimeout(r, 50));
   }
   const stored = await getStoredKey();
-  if (stored) showOnly('unlock-view');
-  else        showOnly('login-view');
+  if (stored) {
+    showOnly('unlock-view');
+    // Auto-fire the biometric prompt so users don't have to tap Unlock
+    // first. Matches the banking-app pattern: open app → system Face ID /
+    // Touch ID prompt immediately. Small timeout so the unlock card has
+    // a frame to render before the OS prompt covers it; otherwise users
+    // briefly see the prompt over a blank webview.
+    setTimeout(tryUnlock, 250);
+  } else {
+    showOnly('login-view');
+  }
 }
 boot();
 </script>
