@@ -139,11 +139,15 @@
     border: 1px solid var(--border);
     padding: 16px;
     border-left: 3px solid var(--dim);
+    cursor: pointer;
+    transition: border-color 0.15s, transform 0.05s;
   }
+  .device:hover { border-color: var(--accent); }
+  .device:active { transform: scale(0.995); }
   .device.good { border-left-color: var(--accent); }
   .device.warn { border-left-color: var(--warn); }
   .device.crit { border-left-color: var(--crit); }
-  .device.offline { opacity: 0.55; border-left-color: var(--crit); }
+  .device.offline { opacity: 0.55; border-left-color: var(--crit); cursor: pointer; }
   .device .label { font-weight: 700; font-size: 14px; margin-bottom: 4px; }
   .device .ip { color: var(--dim); font-size: 11px; margin-bottom: 12px; }
   .device dl { margin: 0; display: grid; grid-template-columns: 1fr auto; gap: 4px 12px; font-size: 12px; }
@@ -186,6 +190,182 @@
     border-color: var(--accent);
     background: var(--accent-soft);
   }
+
+  /* ===== Per-device detail view ===== */
+  .back-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--dim);
+    text-decoration: none;
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    padding: 6px 10px;
+    border: 1px solid var(--border);
+    background: none;
+    font-family: inherit;
+    cursor: pointer;
+    margin-bottom: 16px;
+  }
+  .back-link:hover { color: var(--accent); border-color: var(--accent); background: var(--accent-soft); }
+  .detail-head {
+    margin-bottom: 18px;
+    padding-bottom: 14px;
+    border-bottom: 1px solid var(--border);
+  }
+  .detail-head .label { font-size: 18px; font-weight: 700; }
+  .detail-head .ip {
+    color: var(--dim);
+    font-size: 12px;
+    margin-top: 4px;
+  }
+  .detail-head .ip .sev {
+    display: inline-block;
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: var(--dim);
+    margin-right: 6px;
+    vertical-align: 1px;
+  }
+  .detail-head .ip .sev.good { background: var(--accent); }
+  .detail-head .ip .sev.warn { background: var(--warn); }
+  .detail-head .ip .sev.crit { background: var(--crit); }
+
+  .detail-section {
+    margin-bottom: 20px;
+    padding-bottom: 20px;
+    border-bottom: 1px solid var(--border);
+  }
+  .detail-section:last-of-type { border-bottom: none; }
+  .detail-section h2 {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    color: var(--dim);
+    margin: 0 0 12px;
+    font-weight: 700;
+  }
+  .pro-tag {
+    display: inline-block;
+    background: var(--accent-soft);
+    color: var(--accent);
+    padding: 2px 6px;
+    font-size: 9px;
+    letter-spacing: 0.1em;
+    margin-left: 6px;
+    border: 1px solid var(--accent);
+  }
+
+  .stat-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+    gap: 10px;
+  }
+  .stat-grid .stat {
+    background: var(--bg-2);
+    border: 1px solid var(--border);
+    padding: 12px 14px;
+  }
+  .stat-grid .stat .l {
+    font-size: 9px;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--dim);
+  }
+  .stat-grid .stat .v {
+    font-size: 18px;
+    font-weight: 700;
+    margin-top: 4px;
+    color: var(--text);
+  }
+  .stat-grid .stat .v .u { font-size: 10px; color: var(--dim); margin-left: 4px; font-weight: 400; }
+  .stat-grid .stat .v.warn { color: var(--warn); }
+  .stat-grid .stat .v.crit { color: var(--crit); }
+  .stat-grid .stat .v.good { color: var(--accent); }
+
+  .rolling-row {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(90px, 1fr));
+    gap: 8px;
+    margin-top: 12px;
+  }
+  .rolling-row .r {
+    background: var(--bg-2);
+    border: 1px solid var(--border);
+    padding: 8px 10px;
+    text-align: center;
+  }
+  .rolling-row .r .k { font-size: 9px; text-transform: uppercase; color: var(--dim); letter-spacing: 0.1em; }
+  .rolling-row .r .v { font-size: 13px; font-weight: 700; margin-top: 2px; }
+
+  .chart-wrap {
+    background: var(--bg-2);
+    border: 1px solid var(--border);
+    padding: 10px 12px 12px;
+    margin-top: 10px;
+  }
+  .chart-wrap .chart-label {
+    font-size: 10px;
+    color: var(--dim);
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    margin-bottom: 6px;
+    display: flex;
+    justify-content: space-between;
+  }
+  .chart-wrap canvas { width: 100%; height: 140px; display: block; }
+
+  .range-controls {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin: 8px 0 4px;
+    align-items: center;
+  }
+  .range-btn {
+    background: none;
+    border: 1px solid var(--border);
+    color: var(--dim);
+    padding: 5px 10px;
+    font-family: inherit;
+    font-size: 11px;
+    cursor: pointer;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+  }
+  .range-btn:hover { color: var(--accent); border-color: var(--accent); }
+  .range-btn.active { color: var(--accent); border-color: var(--accent); background: var(--accent-soft); }
+  .range-meta { color: var(--dim); font-size: 10px; margin-left: 6px; }
+
+  .kv-list { font-size: 12px; }
+  .kv-list .row { display: flex; justify-content: space-between; padding: 6px 0; border-top: 1px solid var(--border); }
+  .kv-list .row:first-child { border-top: none; }
+  .kv-list .row .k { color: var(--dim); }
+  .kv-list .row .v { color: var(--text); text-align: right; word-break: break-all; }
+
+  .event-log {
+    background: var(--bg-2);
+    border: 1px solid var(--border);
+    padding: 4px 0;
+    max-height: 240px;
+    overflow-y: auto;
+    font-size: 11px;
+  }
+  .event-log .ev { padding: 6px 12px; border-top: 1px solid var(--border); display: flex; gap: 12px; }
+  .event-log .ev:first-child { border-top: none; }
+  .event-log .ev .t { color: var(--dim); white-space: nowrap; min-width: 70px; }
+  .event-log .ev .m { color: var(--text); }
+  .event-log .ev-empty { padding: 18px 12px; color: var(--dim); text-align: center; }
+
+  .pro-teaser {
+    background: var(--accent-soft);
+    border: 1px solid var(--accent);
+    padding: 12px 14px;
+    font-size: 12px;
+    color: var(--text);
+  }
+  .pro-teaser .accent { color: var(--accent); font-weight: 700; }
 </style>
 </head>
 <body>
@@ -246,6 +426,76 @@
     <div class="disclaimer">
       ⚠ Read-only preview. Tuning, scanning, and adding devices stay on the LAN dashboard for now — this remote view is for monitoring.
     </div>
+  </div>
+
+  <div id="device-detail-view" hidden>
+    <button type="button" class="back-link" id="detail-back-btn">← back to fleet</button>
+
+    <div class="detail-head">
+      <div class="label" id="detail-label">—</div>
+      <div class="ip"><span class="sev" id="detail-sev"></span><span id="detail-ip">—</span> · <span id="detail-status">—</span></div>
+    </div>
+
+    <section class="detail-section">
+      <h2>live metrics</h2>
+      <div class="stat-grid" id="detail-stats"></div>
+      <div class="rolling-row" id="detail-rolling"></div>
+    </section>
+
+    <section class="detail-section">
+      <h2>recent hashrate · last 1h</h2>
+      <div class="chart-wrap">
+        <div class="chart-label"><span>hashrate</span><span id="chart-h-meta">—</span></div>
+        <canvas id="chart-h"></canvas>
+      </div>
+      <div class="chart-wrap">
+        <div class="chart-label"><span>temps</span><span class="legend"><span style="color: var(--info, #4cc9f0)">━</span> asic &nbsp; <span style="color: var(--warn)">━</span> vr</span></div>
+        <canvas id="chart-t"></canvas>
+      </div>
+    </section>
+
+    <section class="detail-section" id="long-history-section">
+      <h2>long-term history <span class="pro-tag">PRO</span></h2>
+      <div id="long-history-locked" class="pro-teaser" hidden>
+        <span class="accent">Pro</span> unlocks weeks or months of historical metrics — efficiency drift, hashrate trends. Activate in the desktop app's Pro modal.
+      </div>
+      <div id="long-history-body" hidden>
+        <div class="range-controls">
+          <button type="button" class="range-btn active" data-range="24h">24h</button>
+          <button type="button" class="range-btn" data-range="7d">7d</button>
+          <button type="button" class="range-btn" data-range="30d">30d</button>
+          <button type="button" class="range-btn" data-range="90d">90d</button>
+          <span class="range-meta" id="history-meta"></span>
+        </div>
+        <div class="chart-wrap">
+          <div class="chart-label"><span>hashrate</span></div>
+          <canvas id="chart-hist-h"></canvas>
+        </div>
+        <div class="chart-wrap">
+          <div class="chart-label"><span>temps</span><span class="legend"><span style="color: var(--info, #4cc9f0)">━</span> asic &nbsp; <span style="color: var(--warn)">━</span> vr</span></div>
+          <canvas id="chart-hist-t"></canvas>
+        </div>
+        <div class="chart-wrap">
+          <div class="chart-label"><span>efficiency · J/TH</span></div>
+          <canvas id="chart-hist-e"></canvas>
+        </div>
+      </div>
+    </section>
+
+    <section class="detail-section">
+      <h2>shares</h2>
+      <div class="kv-list" id="detail-shares"></div>
+    </section>
+
+    <section class="detail-section">
+      <h2>pool / stratum (read-only)</h2>
+      <div class="kv-list" id="detail-pool"></div>
+    </section>
+
+    <section class="detail-section">
+      <h2>recent events</h2>
+      <div class="event-log" id="detail-events"></div>
+    </section>
   </div>
 </main>
 
@@ -399,7 +649,7 @@ function renderDevices(devices) {
     const asicCls = tempClass(m.temp, true);
     const vrCls = tempClass(m.vrTemp, false);
     const effCls = effClass(eff.jPerTh);
-    return `<div class="device ${escapeHtml(cls)}">
+    return `<div class="device ${escapeHtml(cls)}" data-ip="${escapeHtml(d.ip)}" role="button" tabindex="0" aria-label="Open ${escapeHtml(d.label || d.ip)}">
       <div class="label">${escapeHtml(d.label || d.ip)}</div>
       <div class="ip">${escapeHtml(d.ip)} · ${d.online ? escapeHtml(d.model || 'online') : 'offline'}</div>
       <dl>
@@ -414,10 +664,22 @@ function renderDevices(devices) {
   }).join('');
 }
 
+// ----- View state ------------------------------------------------------
+// 'fleet' = dashboard polling /api/devices; 'detail' = polling /api/device/<ip>.
+// Polling timer fires the right call based on currentView.
+let currentView = 'fleet';
+let currentDetailIp = null;
+let historyRange = '24h';
+
 async function pollOnce() {
   try {
-    const resp = await wsRequest('GET', '/api/devices', null);
-    if (resp.status === 200) renderDevices(resp.body);
+    if (currentView === 'detail' && currentDetailIp) {
+      const resp = await wsRequest('GET', `/api/device/${encodeURIComponent(currentDetailIp)}`, null);
+      if (resp.status === 200) renderDetail(resp.body);
+    } else {
+      const resp = await wsRequest('GET', '/api/devices', null);
+      if (resp.status === 200) renderDevices(resp.body);
+    }
   } catch (e) {
     // swallow — onclose handler will resync once reconnected
   }
@@ -435,13 +697,284 @@ function stopPolling() {
 function showDashboard() {
   $('login-view').hidden = true;
   $('dashboard-view').hidden = false;
+  $('device-detail-view').hidden = true;
   $('status-bar').hidden = false;
+  currentView = 'fleet';
+  currentDetailIp = null;
 }
 
 function showLogin() {
   $('login-view').hidden = false;
   $('dashboard-view').hidden = true;
+  $('device-detail-view').hidden = true;
   $('status-bar').hidden = true;
+}
+
+function showDetail(ip) {
+  $('login-view').hidden = true;
+  $('dashboard-view').hidden = true;
+  $('device-detail-view').hidden = false;
+  $('status-bar').hidden = false;
+  currentView = 'detail';
+  currentDetailIp = ip;
+  // Immediate fetch so the user sees data right away rather than waiting for
+  // the next 5s tick.
+  pollOnce();
+  // Also fetch the long-term history; relay returns 402 / 403 for free tier.
+  loadHistory();
+}
+
+// ----- Detail rendering -----------------------------------------------
+function renderDetail(d) {
+  if (!d) return;
+  const m = d.metrics || {};
+  const e = d.efficiency || {};
+  const sh = d.shares || {};
+  const rolling = d.rolling || {};
+  const sev = classifySeverity(d);
+
+  $('detail-label').textContent = d.label || d.ip;
+  $('detail-ip').textContent = d.ip;
+  $('detail-sev').className = 'sev ' + (sev === 'offline' ? 'crit' : sev);
+  $('detail-status').textContent = d.online
+    ? `${d.model || 'online'}${d.version ? ' · v' + d.version : ''}`
+    : (d.lastError || 'offline');
+
+  const asicCls = tempClass(m.temp, true);
+  const vrCls = tempClass(m.vrTemp, false);
+  const effCls = effClass(e.jPerTh);
+
+  // Live metrics grid
+  $('detail-stats').innerHTML = [
+    ['hashrate', `${fmt(m.hashRate, 1)}`, 'GH/s', ''],
+    ['asic temp', `${fmt(m.temp, 1)}`, '°C', asicCls],
+    ['vreg temp', `${fmt(m.vrTemp, 1)}`, '°C', vrCls],
+    ['fan', `${fmt(m.fanSpeed, 0)}`, 'rpm', ''],
+    ['fan %', `${fmt(m.fanPercent, 0)}`, '%', ''],
+    ['power', `${fmt(m.power, 1)}`, 'W', ''],
+    ['voltage', `${fmt((m.voltage || 0) / 1000, 2)}`, 'V', ''],
+    ['core volt', `${fmt(m.coreVoltage, 0)}`, 'mV', ''],
+    ['frequency', `${fmt(m.frequency, 0)}`, 'MHz', ''],
+    ['efficiency', `${fmt(e.jPerTh, 2)}`, 'J/TH', effCls],
+    ['expected', `${fmt(e.expectedGhs, 1)}`, 'GH/s', ''],
+    ['vs expected', `${fmt(e.actualPctOfExpected, 1)}`, '%', ''],
+    ['uptime', fmtUptime(m.uptime || 0), '', ''],
+  ].map(([k, v, u, cls]) =>
+    `<div class="stat"><div class="l">${escapeHtml(k)}</div><div class="v ${escapeHtml(cls)}">${escapeHtml(v)}${u ? `<span class="u">${escapeHtml(u)}</span>` : ''}</div></div>`
+  ).join('');
+
+  // Rolling averages
+  $('detail-rolling').innerHTML = ['1m', '5m', '15m', '1h'].map(k =>
+    `<div class="r"><div class="k">${k} avg</div><div class="v">${fmt(rolling[k], 1)} GH/s</div></div>`
+  ).join('');
+
+  // Shares
+  const hw = d.hwErrors || {};
+  $('detail-shares').innerHTML = [
+    ['session accepted', formatNum(sh.sessionAccepted)],
+    ['session rejected', `${formatNum(sh.sessionRejected)} (${(hw.ratePct || 0).toFixed(2)}%)`],
+    ['lifetime accepted', formatNum(sh.lifetimeAccepted)],
+    ['lifetime rejected', formatNum(sh.lifetimeRejected)],
+    ['best diff (career)', formatDiff(m.bestDiff)],
+    ['best diff (session)', formatDiff(m.bestSessionDiff)],
+    ['per minute', `${fmt(sh.perMin, 2)}`],
+    ['pool difficulty', formatDiff(m.poolDifficulty)],
+  ].map(([k, v]) =>
+    `<div class="row"><span class="k">${escapeHtml(k)}</span><span class="v">${escapeHtml(String(v))}</span></div>`
+  ).join('');
+
+  // Pool config — `stratum` block on the summary. Field names per the
+  // device_summary() return in app.py: url/port/user/tls/suggestedDifficulty
+  // and fallback* counterparts. usingFallback is 0/1.
+  const st = d.stratum || {};
+  const poolRows = [
+    ['primary url', st.url],
+    ['primary port', st.port],
+    ['primary user', st.user],
+    ['primary tls', st.tls ? 'on' : null],
+    ['suggested diff', st.suggestedDifficulty],
+    ['fallback url', st.fallbackUrl],
+    ['fallback port', st.fallbackPort],
+    ['fallback user', st.fallbackUser],
+    ['using fallback?', st.usingFallback ? 'yes' : null],
+    ['connection', st.connectionInfo],
+  ].filter(([, v]) => v != null && v !== '' && v !== 0);
+  $('detail-pool').innerHTML = poolRows.length
+    ? poolRows.map(([k, v]) => `<div class="row"><span class="k">${escapeHtml(k)}</span><span class="v">${escapeHtml(String(v))}</span></div>`).join('')
+    : '<div class="row"><span class="k" style="text-align:center;width:100%">no pool data reported</span></div>';
+
+  // Event log
+  const events = d.events || [];
+  $('detail-events').innerHTML = events.length
+    ? events.map(ev => `<div class="ev"><span class="t">${fmtTime(ev.t)}</span><span class="m">${escapeHtml(ev.msg)}</span></div>`).join('')
+    : '<div class="ev-empty">no events recorded yet</div>';
+
+  // Recent hashrate + temp charts (1h rolling history)
+  const history = d.history || [];
+  drawSingleChart($('chart-h'), history, 'hashRate', cssVar('--accent'));
+  drawTwoLineChart($('chart-t'), history, 'temp', 'vrTemp', cssVar('--info', '#4cc9f0'), cssVar('--warn'));
+  $('chart-h-meta').textContent = history.length ? `${history.length} pts` : '';
+}
+
+// ----- Long-term history (Pro) ----------------------------------------
+// Endpoint: /api/device/<ip>/history?range=24h|7d|30d|90d. Returns
+// { range, bucket_s, window_s, points:[{t,hashRate,temp,vrTemp,power,...}],
+//   total_points }. Free tier gets a 402 with code: 'pro_required'.
+async function loadHistory() {
+  if (!currentDetailIp) return;
+  const body = $('long-history-body');
+  const locked = $('long-history-locked');
+  try {
+    const resp = await wsRequest('GET', `/api/device/${encodeURIComponent(currentDetailIp)}/history?range=${historyRange}`, null);
+    if (resp.status === 200 && resp.body && Array.isArray(resp.body.points)) {
+      locked.hidden = true;
+      body.hidden = false;
+      const pts = resp.body.points;
+      // Compute J/TH per bucket on the client since the endpoint doesn't return it.
+      pts.forEach(p => {
+        const ghs = p.hashRate || 0;
+        p.jth = (ghs > 0 && p.power > 0) ? +(p.power / (ghs / 1000)).toFixed(2) : 0;
+      });
+      const bs = resp.body.bucket_s || 0;
+      const bucketLabel = bs >= 86400 ? `${Math.round(bs / 86400)}d buckets`
+                       : bs >= 3600  ? `${Math.round(bs / 3600)}h buckets`
+                       : bs >= 60    ? `${Math.round(bs / 60)}m buckets`
+                       : `${bs}s buckets`;
+      $('history-meta').textContent = pts.length
+        ? `${pts.length} points · ${bucketLabel}`
+        : 'no data in this window yet';
+      drawSingleChart($('chart-hist-h'), pts, 'hashRate', cssVar('--accent'));
+      drawTwoLineChart($('chart-hist-t'), pts, 'temp', 'vrTemp', cssVar('--info', '#4cc9f0'), cssVar('--warn'));
+      drawSingleChart($('chart-hist-e'), pts, 'jth', cssVar('--warn'));
+    } else if (resp.status === 402 || resp.status === 403) {
+      // Free tier — show the Pro teaser instead.
+      body.hidden = true;
+      locked.hidden = false;
+    } else {
+      body.hidden = true;
+      locked.hidden = true;
+    }
+  } catch (e) {
+    body.hidden = true;
+    locked.hidden = true;
+  }
+}
+
+// ----- Charts (canvas) ------------------------------------------------
+// Single-line area chart with a soft gradient fill. Key is the property name
+// on each point object. Color is a CSS color string.
+function drawSingleChart(canvas, points, key, color) {
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  const dpr = window.devicePixelRatio || 1;
+  const w = canvas.clientWidth, h = canvas.clientHeight;
+  canvas.width = w * dpr; canvas.height = h * dpr;
+  ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.scale(dpr, dpr);
+  ctx.clearRect(0, 0, w, h);
+  if (!points || points.length < 2) return;
+
+  // Subtle horizontal grid
+  ctx.strokeStyle = 'rgba(120,140,135,0.18)';
+  ctx.lineWidth = 1;
+  for (let i = 1; i < 4; i++) {
+    const y = (h / 4) * i;
+    ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke();
+  }
+
+  const vals = points.map(p => p[key]).filter(v => v != null && isFinite(v));
+  if (!vals.length) return;
+  const lo = Math.min(...vals) * 0.95;
+  const hi = Math.max(...vals) * 1.05;
+  const range = hi - lo || 1;
+
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  points.forEach((p, i) => {
+    const v = p[key];
+    if (v == null || !isFinite(v)) return;
+    const x = (i / (points.length - 1)) * w;
+    const y = h - ((v - lo) / range) * h;
+    if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+  });
+  ctx.stroke();
+  ctx.lineTo(w, h); ctx.lineTo(0, h); ctx.closePath();
+  const grad = ctx.createLinearGradient(0, 0, 0, h);
+  grad.addColorStop(0, color + '33');
+  grad.addColorStop(1, color + '00');
+  ctx.fillStyle = grad;
+  ctx.fill();
+}
+
+// Two-line chart for asic + vr temps on a shared y-scale.
+function drawTwoLineChart(canvas, points, keyA, keyB, colorA, colorB) {
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  const dpr = window.devicePixelRatio || 1;
+  const w = canvas.clientWidth, h = canvas.clientHeight;
+  canvas.width = w * dpr; canvas.height = h * dpr;
+  ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.scale(dpr, dpr);
+  ctx.clearRect(0, 0, w, h);
+  if (!points || points.length < 2) return;
+
+  const all = [];
+  points.forEach(p => {
+    if (isFinite(p[keyA])) all.push(p[keyA]);
+    if (isFinite(p[keyB])) all.push(p[keyB]);
+  });
+  if (!all.length) return;
+  const lo = Math.min(...all) - 2;
+  const hi = Math.max(...all) + 2;
+  const range = hi - lo || 1;
+
+  ctx.strokeStyle = 'rgba(120,140,135,0.18)';
+  for (let i = 1; i < 4; i++) {
+    const y = (h / 4) * i;
+    ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke();
+  }
+
+  [[keyA, colorA], [keyB, colorB]].forEach(([key, color]) => {
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 1.4;
+    ctx.beginPath();
+    let started = false;
+    points.forEach((p, i) => {
+      const v = p[key];
+      if (v == null || !isFinite(v)) return;
+      const x = (i / (points.length - 1)) * w;
+      const y = h - ((v - lo) / range) * h;
+      if (!started) { ctx.moveTo(x, y); started = true; }
+      else ctx.lineTo(x, y);
+    });
+    ctx.stroke();
+  });
+}
+
+function cssVar(name, fallback) {
+  const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  return v || fallback || '#888';
+}
+
+function fmtUptime(s) {
+  if (!s || s < 0) return '—';
+  const d = Math.floor(s / 86400);
+  const h = Math.floor((s % 86400) / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  if (d > 0) return `${d}d ${h}h ${m}m`;
+  if (h > 0) return `${h}h ${m}m`;
+  return `${m}m`;
+}
+function fmtTime(ts) { return new Date(ts * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }); }
+function formatNum(n) { if (n == null) return '0'; return Number(n).toLocaleString(); }
+function formatDiff(v) {
+  if (v == null || v === '') return '—';
+  if (typeof v === 'string' && /[a-zA-Z]/.test(v)) return v;
+  const n = Number(v);
+  if (!isFinite(n) || n === 0) return '0';
+  const units = ['', 'K', 'M', 'G', 'T', 'P'];
+  let i = 0, x = n;
+  while (Math.abs(x) >= 1000 && i < units.length - 1) { x /= 1000; i++; }
+  return (i === 0 ? x.toString() : x.toFixed(x >= 100 ? 0 : x >= 10 ? 1 : 2)) + units[i];
 }
 
 async function connectWithToken(token) {
@@ -481,6 +1014,38 @@ $('logout-btn').addEventListener('click', () => {
   stopPolling();
   if (ws) { ws.close(); ws = null; }
   showLogin();
+});
+
+// ----- Device card click → drill into detail view ---------------------
+// Delegate the click on #device-list since cards are re-rendered every poll.
+$('device-list').addEventListener('click', (ev) => {
+  const card = ev.target.closest('.device');
+  if (!card) return;
+  const ip = card.getAttribute('data-ip');
+  if (ip) showDetail(ip);
+});
+$('device-list').addEventListener('keydown', (ev) => {
+  if (ev.key !== 'Enter' && ev.key !== ' ') return;
+  const card = ev.target.closest('.device');
+  if (!card) return;
+  ev.preventDefault();
+  const ip = card.getAttribute('data-ip');
+  if (ip) showDetail(ip);
+});
+
+$('detail-back-btn').addEventListener('click', () => {
+  showDashboard();
+  // Trigger an immediate fleet poll so the user sees fresh totals on return.
+  pollOnce();
+});
+
+// Range button toggles for the Pro long-term history.
+document.querySelectorAll('#long-history-body .range-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    historyRange = btn.getAttribute('data-range') || '24h';
+    document.querySelectorAll('#long-history-body .range-btn').forEach(b => b.classList.toggle('active', b === btn));
+    loadHistory();
+  });
 });
 
 // Boot: if we have a token, try to use it.
