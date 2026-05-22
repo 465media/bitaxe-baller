@@ -1,0 +1,83 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 4096 2304" width="4096" height="2304">
+  <title>Bitaxe Baller — Google Play developer profile header (4096×2304)</title>
+  <desc>Dev account banner for the Play Store developer profile page. Hero treatment: pickaxe + BITAXE.BALLER wordmark on dark background with accent green details, terminal aesthetic.</desc>
+
+  <defs>
+    <linearGradient id="bg-grad" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0a0d0c"/>
+      <stop offset="1" stop-color="#0f1413"/>
+    </linearGradient>
+    <linearGradient id="accent-glow" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#00ff9c" stop-opacity="0.10"/>
+      <stop offset="1" stop-color="#00ff9c" stop-opacity="0"/>
+    </linearGradient>
+    <radialGradient id="hero-glow" cx="0.3" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#00ff9c" stop-opacity="0.18"/>
+      <stop offset="1" stop-color="#00ff9c" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+
+  <!-- Background -->
+  <rect x="0" y="0" width="4096" height="2304" fill="url(#bg-grad)"/>
+
+  <!-- Hero glow positioned behind the wordmark -->
+  <rect x="0" y="0" width="4096" height="2304" fill="url(#hero-glow)"/>
+
+  <!-- Grid texture (horizontal) -->
+  <g stroke="#1f2b27" stroke-width="2" opacity="0.32">
+    <line x1="0" y1="460" x2="4096" y2="460"/>
+    <line x1="0" y1="920" x2="4096" y2="920"/>
+    <line x1="0" y1="1380" x2="4096" y2="1380"/>
+    <line x1="0" y1="1840" x2="4096" y2="1840"/>
+  </g>
+
+  <!-- Vertical accent lines for the techy frame -->
+  <g stroke="#1f2b27" stroke-width="2" opacity="0.28">
+    <line x1="1024" y1="0" x2="1024" y2="2304"/>
+    <line x1="2048" y1="0" x2="2048" y2="2304"/>
+    <line x1="3072" y1="0" x2="3072" y2="2304"/>
+  </g>
+
+  <!-- Pickaxe icon, large, left of wordmark -->
+  <g transform="translate(560, 1080) rotate(-30) scale(1.75)">
+    <path d="M -178 30 Q -150 18 -120 0 Q -70 -42 -30 -32 Q -12 -28 0 -22 Q 12 -28 30 -32 Q 70 -42 120 0 Q 150 18 178 30 Q 168 36 156 34 Q 100 22 50 10 Q 22 4 0 4 Q -22 4 -50 10 Q -100 22 -156 34 Q -168 36 -178 30 Z" fill="#00ff9c"/>
+    <rect x="-10" y="0" width="20" height="118" rx="2" fill="#00ff9c"/>
+    <rect x="-15" y="116" width="30" height="10" rx="2" fill="#00ff9c"/>
+  </g>
+
+  <!-- Wordmark (right of pickaxe) -->
+  <text x="1120" y="1140" fill="#00ff9c" font-family="'JetBrains Mono', ui-monospace, monospace" font-size="280" font-weight="700" letter-spacing="14">
+    BITAXE<tspan fill="#00ff9c">.</tspan><tspan fill="#c8d4d1">BALLER</tspan>
+  </text>
+
+  <!-- Tagline -->
+  <text x="1120" y="1280" fill="#5a6b66" font-family="'JetBrains Mono', ui-monospace, monospace" font-size="92" font-weight="400" letter-spacing="14">
+    YOUR FLEET, FROM ANYWHERE
+  </text>
+
+  <!-- Three feature pills below the tagline -->
+  <g transform="translate(1120, 1420)" font-family="'JetBrains Mono', ui-monospace, monospace" font-size="50" font-weight="700" letter-spacing="6">
+    <g>
+      <rect x="0" y="0" width="560" height="120" fill="rgba(0,255,156,0.08)" stroke="#00ff9c" stroke-width="3"/>
+      <text x="280" y="82" fill="#00ff9c" text-anchor="middle">FACE ID GATED</text>
+    </g>
+    <g transform="translate(600, 0)">
+      <rect x="0" y="0" width="640" height="120" fill="rgba(0,255,156,0.08)" stroke="#00ff9c" stroke-width="3"/>
+      <text x="320" y="82" fill="#00ff9c" text-anchor="middle">LIVE HASHRATE</text>
+    </g>
+    <g transform="translate(1280, 0)">
+      <rect x="0" y="0" width="640" height="120" fill="rgba(0,255,156,0.08)" stroke="#00ff9c" stroke-width="3"/>
+      <text x="320" y="82" fill="#00ff9c" text-anchor="middle">90-DAY HISTORY</text>
+    </g>
+  </g>
+
+  <!-- URL stamp bottom right -->
+  <text x="4040" y="2220" fill="#5a6b66" font-family="'JetBrains Mono', ui-monospace, monospace" font-size="58" letter-spacing="8" text-anchor="end">
+    bitaxeballer.com
+  </text>
+
+  <!-- Author byline bottom left -->
+  <text x="120" y="2220" fill="#5a6b66" font-family="'JetBrains Mono', ui-monospace, monospace" font-size="42" letter-spacing="6">
+    OPEN SOURCE · NH · 465-MEDIA
+  </text>
+</svg>

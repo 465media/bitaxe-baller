@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <title>Bitaxe Baller — Google Play developer profile icon (512×512)</title>
+  <desc>Dev account icon for the Play Store developer profile page. Pickaxe silhouette on dark background, brand accent green. Designed to remain recognizable at 48×48 thumbnail size.</desc>
+
+  <!-- Background -->
+  <rect x="0" y="0" width="512" height="512" fill="#0a0d0c"/>
+
+  <!-- Subtle radial accent glow centered behind the pickaxe -->
+  <defs>
+    <radialGradient id="glow" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#00ff9c" stop-opacity="0.12"/>
+      <stop offset="1" stop-color="#00ff9c" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect x="0" y="0" width="512" height="512" fill="url(#glow)"/>
+
+  <!-- Faint grid texture for techy feel (won't be visible at 48px) -->
+  <g stroke="#1f2b27" stroke-width="1" opacity="0.4">
+    <line x1="0" y1="128" x2="512" y2="128"/>
+    <line x1="0" y1="256" x2="512" y2="256"/>
+    <line x1="0" y1="384" x2="512" y2="384"/>
+  </g>
+
+  <!-- Pickaxe, large and centered, rotated -30° (brand treatment) -->
+  <g transform="translate(256, 256) rotate(-30) scale(1.05)">
+    <path d="M -178 30 Q -150 18 -120 0 Q -70 -42 -30 -32 Q -12 -28 0 -22 Q 12 -28 30 -32 Q 70 -42 120 0 Q 150 18 178 30 Q 168 36 156 34 Q 100 22 50 10 Q 22 4 0 4 Q -22 4 -50 10 Q -100 22 -156 34 Q -168 36 -178 30 Z" fill="#00ff9c"/>
+    <rect x="-10" y="0" width="20" height="118" rx="2" fill="#00ff9c"/>
+    <rect x="-15" y="116" width="30" height="10" rx="2" fill="#00ff9c"/>
+  </g>
+</svg>
