@@ -17,7 +17,7 @@
 - **Current:** `DEVELOPMENT_TEAM = MVBDDDFNV6;`
 - **Expected:** `DEVELOPMENT_TEAM = K7SNP7C2XJ;` (per `MEMORY.md` and `reference_mobile-capacitor.md` — same team as desktop Mac signing)
 - **Why it blocks:** Xcode automatic signing will pull provisioning profiles for the wrong Apple Developer account. Archive succeeds but TestFlight upload will fail at the App Store Connect handshake ("No matching profiles found" or "Team does not have access to this bundle ID"). Cannot be patched after the upload — must fix locally and re-archive.
-- **Fix:** In Xcode → App target → Signing & Capabilities → Team dropdown → select the K7SNP7C2XJ team. Or edit the two `DEVELOPMENT_TEAM = MVBDDDFNV6;` lines directly. Verify the bundle ID `com.bitaxeballer.app` is registered under K7SNP7C2XJ in the Apple Developer portal first.
+- **Fix:** In Xcode → App target → Signing & Capabilities → Team dropdown → select the K7SNP7C2XJ team. Or edit the two `DEVELOPMENT_TEAM = MVBDDDFNV6;` lines directly. Verify the bundle ID `com.bitaxeballer.mobile` is registered under K7SNP7C2XJ in the Apple Developer portal first.
 
 ### B2. iOS orientation declares landscape — contradicts the portrait-only product intent
 - **File:** `mobile/ios/App/App/Info.plist` lines 39-51
@@ -76,7 +76,7 @@
 
 ## What passed (green checks — sleep easy on these)
 
-- **Bundle ID parity:** iOS `PRODUCT_BUNDLE_IDENTIFIER = com.bitaxeballer.app` matches Android `applicationId "com.bitaxeballer.app"` matches `capacitor.config.json` `appId`. Locked in across all four sources of truth.
+- **Bundle ID parity:** iOS `PRODUCT_BUNDLE_IDENTIFIER = com.bitaxeballer.mobile` matches Android `applicationId "com.bitaxeballer.mobile"` matches `capacitor.config.json` `appId`. Locked in across all four sources of truth.
 - **App name parity:** "Bitaxe Baller" (with space) in `CFBundleDisplayName`, Android `strings.xml` (`<string name="app_name">`), and `capacitor.config.json` `appName`.
 - **`NSFaceIDUsageDescription`:** present (line 29-30 of Info.plist), user-facing copy ("Unlock Bitaxe Baller with Face ID so your license key stays gated behind your biometric"), not generic boilerplate. App Store review passes.
 - **`ITSAppUsesNonExemptEncryption = false`:** present (line 25-26 of Info.plist). Skips the per-upload export-compliance prompt in App Store Connect. Valid claim since the app uses only stock HTTPS/WSS.
@@ -84,7 +84,7 @@
 - **`UIRequiresFullScreen` not set:** allows multitasking / Split View on iPad (good — Apple penalizes apps that force fullscreen without reason).
 - **Launch screen:** `LaunchScreen.storyboard` present at `mobile/ios/App/App/Base.lproj/LaunchScreen.storyboard`, references the `Splash` image asset, declared in Info.plist as `UILaunchStoryboardName`.
 - **iOS marketing icon:** `AppIcon-512@2x.png` is 1024x1024, RGB (no alpha channel — Apple rejects alpha in marketing icons). Capacitor 8 uses single-icon mode; the asset catalog `Contents.json` correctly declares `idiom: universal, size: 1024x1024, platform: ios`. iOS auto-derives the smaller sizes at build time. **No missing icon sizes.**
-- **Android `applicationId`:** `com.bitaxeballer.app` is set and matches iOS. Locked in — cannot change after first Play upload, and we're aligned correctly.
+- **Android `applicationId`:** `com.bitaxeballer.mobile` is set and matches iOS. Locked in — cannot change after first Play upload, and we're aligned correctly.
 - **Android `versionCode = 1` / `versionName = "1.0.0"`:** initial release values, correct types (integer / string).
 - **Android `minSdkVersion = 24`:** above the 23 floor required by `androidx.biometric`. BiometricPrompt API will function.
 - **Android permissions:** `INTERNET` in app manifest; `USE_BIOMETRIC` + `USE_FINGERPRINT` auto-merged from the `@aparajita/capacitor-biometric-auth` AAR (verified in `app/build/intermediates/merged_manifests/.../AndroidManifest.xml`). No surprise permissions (no CAMERA / LOCATION / READ_CONTACTS / etc.) — Play's data-safety form will be minimal.

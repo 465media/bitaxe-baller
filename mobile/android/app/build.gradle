@@ -12,10 +12,10 @@ if (keystorePropertiesFile.exists()) {
 }
 
 android {
-    namespace = "com.bitaxeballer.app"
+    namespace = "com.bitaxeballer.mobile"
     compileSdk = rootProject.ext.compileSdkVersion
     defaultConfig {
-        applicationId "com.bitaxeballer.app"
+        applicationId "com.bitaxeballer.mobile"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 1

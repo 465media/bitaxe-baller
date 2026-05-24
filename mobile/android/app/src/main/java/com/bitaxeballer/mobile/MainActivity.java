@@ -1,4 +1,4 @@
-package com.bitaxeballer.app;
+package com.bitaxeballer.mobile;
 
 import com.getcapacitor.BridgeActivity;
 

@@ -83,8 +83,8 @@ Regenerated (gitignored):
 
 ## Bundle identifiers
 
-- iOS: `com.bitaxeballer.app`
-- Android: `com.bitaxeballer.app`
+- iOS: `com.bitaxeballer.mobile`
+- Android: `com.bitaxeballer.mobile`
 
 Both need to be claimed in your Apple Developer + Google Play accounts before you can submit to the stores.
 
