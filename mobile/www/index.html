@@ -267,13 +267,13 @@
     <div class="err" id="unlock-err"></div>
   </div>
 
-  <!-- 2. First-run / forget license entry -->
+  <!-- 2. First-run / pair-with-desktop entry -->
   <div class="center-card" id="login-view" hidden>
-    <h1>Sign in</h1>
-    <p>Enter your license key from your Bitaxe Baller desktop install. It's stored on this device's secure enclave and unlocked with biometrics on every launch.</p>
-    <label for="license-key">License key</label>
-    <input id="license-key" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" inputmode="text">
-    <button class="btn-primary" id="login-btn">Save &amp; sign in</button>
+    <h1>Pair with desktop</h1>
+    <p>Open Bitaxe Baller on your Mac, Windows, or Umbrel install. Click the <strong>Pro</strong> button in the top-right header, then <strong>Pair a new device</strong>. Type the code shown into the field below.</p>
+    <label for="pair-code">Pair code</label>
+    <input id="pair-code" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" inputmode="text" placeholder="enter the code from your desktop">
+    <button class="btn-primary" id="login-btn">Pair this iPhone</button>
     <div class="err" id="login-err"></div>
   </div>
 
@@ -395,6 +395,15 @@
 //
 const RELAY_BASE = 'https://relay.bitaxeballer.com';
 const RELAY_WS   = 'wss://relay.bitaxeballer.com';
+const SITE_BASE  = 'https://bitaxeballer.com';
+// iOS v1.1 device-token auth (replaces license_key entry). Device tokens
+// are issued by /api/relay/pair-redeem after the user scans/enters a
+// short-lived pair code generated from their desktop install. Stored in
+// the device's secure prefs; cleared on logout or revocation.
+const DEVICE_TOKEN_PREF = 'bb_device_token';
+// Legacy storage key. Pre-v1.1 builds saved the raw license key here.
+// We clear it on first launch of v1.1 so users re-pair (cleaner reset
+// than trying to bridge the old session-token flow to the new one).
 const LICENSE_KEY_PREF = 'bb_license_key';
 
 const $ = (id) => document.getElementById(id);
@@ -415,17 +424,24 @@ let currentView = 'fleet';
 let currentDetailIp = null;
 let historyRange = '24h';
 
-async function getStoredKey() {
+async function getDeviceToken() {
   try {
-    const { value } = await window.BB_Preferences.get({ key: LICENSE_KEY_PREF });
+    const { value } = await window.BB_Preferences.get({ key: DEVICE_TOKEN_PREF });
     return value || null;
   } catch (e) { return null; }
 }
-async function storeKey(k) {
-  await window.BB_Preferences.set({ key: LICENSE_KEY_PREF, value: k });
+async function storeDeviceToken(t) {
+  await window.BB_Preferences.set({ key: DEVICE_TOKEN_PREF, value: t });
 }
-async function forgetKey() {
-  await window.BB_Preferences.remove({ key: LICENSE_KEY_PREF });
+async function forgetDeviceToken() {
+  await window.BB_Preferences.remove({ key: DEVICE_TOKEN_PREF });
+}
+async function _clearLegacyLicenseKey() {
+  // One-time migration from v1.0 (pre-pairing) license-key storage. v1.0
+  // never shipped to public users (Apple rejected both submissions), but
+  // any tester install carries the old prefs — clear them so we don't
+  // accidentally treat a license key as a device token.
+  try { await window.BB_Preferences.remove({ key: LICENSE_KEY_PREF }); } catch (_) {}
 }
 
 // Biometric prompt. Returns true on success, throws on failure / cancellation.
@@ -449,17 +465,32 @@ async function requestBiometric(reason) {
   return true;
 }
 
-async function loginAndConnect(licenseKey) {
-  // POST /login
-  const fd = new FormData();
-  fd.append('license_key', licenseKey);
-  const r = await fetch(`${RELAY_BASE}/login`, { method: 'POST', body: fd });
+async function pairAndConnect(pairCode) {
+  // POST the pair code to the site server. Returns a long-lived
+  // device_token that authenticates this iPhone to the relay until
+  // revoked from the desktop.
+  const r = await fetch(`${SITE_BASE}/api/relay/pair-redeem`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      pair_token: pairCode,
+      platform: 'ios',
+      device_label: (window.navigator && navigator.userAgent && navigator.userAgent.includes('iPad')) ? 'iPad' : 'iPhone',
+    }),
+  });
   const j = await r.json();
-  if (!r.ok || !j.ok) throw new Error(j.error || `HTTP ${r.status}`);
-  const token = j.token;
+  if (!r.ok) throw new Error(j.error || `HTTP ${r.status}`);
+  const deviceToken = j.device_token;
+  if (!deviceToken) throw new Error('No device token returned from pair-redeem.');
+  await connectWithDeviceToken(deviceToken);
+  return deviceToken;
+}
 
-  // Open WS /ws/client
-  await openWs(token);
+async function connectWithDeviceToken(deviceToken) {
+  // Open WS /ws/client with the device_token. Relay's shape check
+  // (no dot in token) routes it through device_lookup → install_uuid
+  // for the paired desktop, then applies free-tier stripping if needed.
+  await openWs(deviceToken);
   showOnly('fleet-view', 'status-bar');
   startPolling();
 }
@@ -782,14 +813,14 @@ function formatDiff(v) {
 
 // ----- View handlers -----
 $('login-btn').addEventListener('click', async () => {
-  const key = $('license-key').value.trim();
-  if (!key) return;
+  const code = $('pair-code').value.trim();
+  if (!code) return;
   const btn = $('login-btn'); btn.disabled = true; $('login-err').textContent = '';
   try {
-    await loginAndConnect(key);
-    await storeKey(key);
-    // Prompt for biometric registration on first successful login. Skip if user dismisses;
-    // they'll get prompted on next launch anyway.
+    const deviceToken = await pairAndConnect(code);
+    await storeDeviceToken(deviceToken);
+    // Prompt for biometric registration on first successful pair. Skip if
+    // user dismisses; they'll get prompted on next launch anyway.
     try { await requestBiometric('Set up Face ID / Touch ID for faster sign-in'); } catch (_) {}
   } catch (e) {
     $('login-err').textContent = e.message;
@@ -804,9 +835,9 @@ async function tryUnlock() {
   btn.disabled = true; $('unlock-err').textContent = '';
   try {
     await requestBiometric('Unlock Bitaxe Baller');
-    const key = await getStoredKey();
-    if (!key) throw new Error('No stored key — please sign in again.');
-    await loginAndConnect(key);
+    const token = await getDeviceToken();
+    if (!token) throw new Error('No paired device — please pair again.');
+    await connectWithDeviceToken(token);
   } catch (e) {
     $('unlock-err').textContent = e.message;
   } finally {
@@ -816,15 +847,15 @@ async function tryUnlock() {
 $('unlock-btn').addEventListener('click', tryUnlock);
 
 $('forget-btn').addEventListener('click', async () => {
-  if (!confirm('Forget the saved license key on this device? You will need to enter it again next launch.')) return;
-  await forgetKey();
+  if (!confirm('Forget the paired desktop on this device? You will need to pair again next launch.')) return;
+  await forgetDeviceToken();
   showOnly('login-view');
 });
 
 $('logout-btn').addEventListener('click', async () => {
   stopPolling();
   if (ws) { ws.close(); ws = null; }
-  await forgetKey();
+  await forgetDeviceToken();
   showOnly('login-view');
 });
 
@@ -854,7 +885,9 @@ async function boot() {
   while (!window.Capacitor || !window.Capacitor.Plugins || !window.BB_BiometricAuth || !window.BB_Preferences) {
     await new Promise(r => setTimeout(r, 50));
   }
-  const stored = await getStoredKey();
+  // Clear any v1.0 license-key storage on first launch of v1.1. Idempotent.
+  await _clearLegacyLicenseKey();
+  const stored = await getDeviceToken();
   if (stored) {
     showOnly('unlock-view');
     // Auto-fire the biometric prompt so users don't have to tap Unlock
