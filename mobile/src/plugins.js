@@ -5,8 +5,11 @@
 // calls only fire when the module is imported.
 import { BiometricAuth } from '@aparajita/capacitor-biometric-auth';
 import { Preferences } from '@capacitor/preferences';
+import { BarcodeScanner } from '@capacitor-mlkit/barcode-scanning';
 window.BB_BiometricAuth = BiometricAuth;
 window.BB_Preferences = Preferences;
+window.BB_BarcodeScanner = BarcodeScanner;
 console.log('[bb] plugins loaded',
   'BiometricAuth=', typeof BiometricAuth,
-  'Preferences=', typeof Preferences);
+  'Preferences=', typeof Preferences,
+  'BarcodeScanner=', typeof BarcodeScanner);

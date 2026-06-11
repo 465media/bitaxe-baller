@@ -26,6 +26,8 @@
 	<false/>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<key>NSCameraUsageDescription</key>
+	<string>Bitaxe Baller uses the camera to scan the pair-code QR shown on your desktop install. No image is uploaded or stored.</string>
 	<key>NSFaceIDUsageDescription</key>
 	<string>Unlock Bitaxe Baller with Face ID so your license key stays gated behind your biometric.</string>
 	<key>UILaunchStoryboardName</key>

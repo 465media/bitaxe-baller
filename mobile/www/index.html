@@ -270,10 +270,12 @@
   <!-- 2. First-run / pair-with-desktop entry -->
   <div class="center-card" id="login-view" hidden>
     <h1>Pair with desktop</h1>
-    <p>Open Bitaxe Baller on your Mac, Windows, or Umbrel install. Click the <strong>Pro</strong> button in the top-right header, then <strong>Pair a new device</strong>. Scan the QR with this phone's camera and paste the code, or type the 22-character pair code below.</p>
+    <p>Open Bitaxe Baller on your Mac, Windows, or Umbrel install. Click the <strong>Pro</strong> button in the top-right header, then <strong>Pair a new device</strong>.</p>
+    <button class="btn-primary" id="scan-qr-btn" style="margin-bottom: 16px;">📷 Scan QR code</button>
+    <div class="or-divider" style="text-align:center;font-size:12px;color:var(--dim,#888);margin:6px 0 12px;text-transform:uppercase;letter-spacing:0.1em;">or type the code</div>
     <label for="pair-code">Pair code</label>
-    <input id="pair-code" type="text" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" inputmode="text" placeholder="enter the code from your desktop">
-    <button class="btn-primary" id="login-btn">Pair this iPhone</button>
+    <input id="pair-code" type="text" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" inputmode="text" placeholder="22-character code from desktop">
+    <button class="btn-ghost" id="login-btn">Pair this device</button>
     <div class="err" id="login-err"></div>
   </div>
 
@@ -813,7 +815,11 @@ function formatDiff(v) {
 
 // ----- View handlers -----
 $('login-btn').addEventListener('click', async () => {
-  const code = $('pair-code').value.trim();
+  await submitPairCode($('pair-code').value.trim());
+});
+
+// Auto-submit the pair flow given a code from anywhere (manual entry, QR scan).
+async function submitPairCode(code) {
   if (!code) return;
   const btn = $('login-btn'); btn.disabled = true; $('login-err').textContent = '';
   try {
@@ -826,6 +832,59 @@ $('login-btn').addEventListener('click', async () => {
     $('login-err').textContent = e.message;
   } finally {
     btn.disabled = false;
+  }
+}
+
+// QR scanner handler. Uses @capacitor-mlkit/barcode-scanning (MLKit on Android,
+// AVFoundation on iOS — both decode QR offline, no network). Steps:
+//   1. Tap "Scan QR code" on the pair view
+//   2. Plugin checks/requests camera permission
+//   3. Plugin opens the camera with a QR overlay; user points at desktop QR
+//   4. First QR detected → string is returned → auto-fill + auto-submit
+//
+// Falls back gracefully if the plugin isn't present (testing in a regular
+// browser without Capacitor) by surfacing an error in the err div.
+$('scan-qr-btn').addEventListener('click', async () => {
+  const btn = $('scan-qr-btn');
+  const errEl = $('login-err');
+  errEl.textContent = '';
+  if (!window.BB_BarcodeScanner) {
+    errEl.textContent = 'Camera scanner unavailable in this build.';
+    return;
+  }
+  btn.disabled = true; btn.textContent = '📷 Opening camera…';
+  try {
+    // Permission check — plugin throws if user denies + asks again on retry.
+    const perm = await window.BB_BarcodeScanner.checkPermissions();
+    if (perm.camera !== 'granted') {
+      const req = await window.BB_BarcodeScanner.requestPermissions();
+      if (req.camera !== 'granted') {
+        errEl.textContent = 'Camera permission required to scan the QR. You can also type the code manually below.';
+        return;
+      }
+    }
+    // Single-shot scan: returns as soon as a QR is decoded. Restricts to
+    // QR_CODE so other barcode types (UPC, EAN, etc.) are ignored.
+    const { barcodes } = await window.BB_BarcodeScanner.scan({
+      formats: ['QR_CODE'],
+    });
+    const code = (barcodes && barcodes[0] && barcodes[0].rawValue || '').trim();
+    if (!code) {
+      errEl.textContent = 'Scan cancelled — no QR detected.';
+      return;
+    }
+    // Pre-fill the input so the user can see what was scanned, then auto-submit.
+    $('pair-code').value = code;
+    await submitPairCode(code);
+  } catch (e) {
+    // Plugin throws { errorMessage: 'scan canceled' } on user-dismissed cancel.
+    if (/cancel/i.test(e.errorMessage || e.message || '')) {
+      errEl.textContent = '';
+    } else {
+      errEl.textContent = 'Could not scan QR: ' + (e.errorMessage || e.message || e);
+    }
+  } finally {
+    btn.disabled = false; btn.textContent = '📷 Scan QR code';
   }
 });
 

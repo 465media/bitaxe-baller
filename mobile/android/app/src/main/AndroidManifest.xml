@@ -32,4 +32,10 @@
     <!-- Permissions -->
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Camera: only used for the in-app QR scanner on the pair-with-desktop
+         view. No frames are stored or uploaded. The optional feature flag
+         lets the app install on devices without a camera (rare but possible
+         on TV / Auto / cheap tablets). -->
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
 </manifest>
