@@ -155,21 +155,24 @@ Bitaxe Baller
 ### Short description (80 char max)
 
 ```
-Monitor your Bitaxe Bitcoin miners from anywhere. Face ID, charts, Pro history.
+Companion viewer — requires the Bitaxe Baller desktop app on home Mac/PC/Umbrel.
 ```
 
-(78 char)
+(79 char. Leads with the prerequisite so users don't install expecting
+a standalone tool.)
 
 ### Full description (4000 char max)
 
-Use the same description as Apple's, above. Google accepts the same body. Add this at the very top:
+Use the updated Apple iOS body (see app-store-listing-v2.md) which now
+opens with the "IMPORTANT — Bitaxe Baller for iOS is a companion
+viewer ..." paragraph. For Google Play, swap "iOS" → "Android" in that
+paragraph and keep the rest verbatim. Sample first paragraph:
 
 ```
-**Bitaxe Baller for Android — the mobile companion to your home Bitcoin mining setup.**
-
+IMPORTANT — Bitaxe Baller for Android is a companion viewer for the Bitaxe Baller desktop application. It does NOT work as a standalone tool. You need to install Bitaxe Baller on your home Mac, Windows PC, or Umbrel server FIRST (free download at bitaxeballer.com), add your Bitaxe miners there, enable Remote Access in the desktop's Pro panel, and then pair this Android app to that desktop install. Without a paired desktop, this app has nothing to show.
 ```
 
-…then the rest of the Apple description verbatim.
+Then the rest of the Apple body verbatim.
 
 ### Category
 

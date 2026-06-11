@@ -23,17 +23,22 @@ Bitaxe Baller
 
 ### Subtitle (30 char max)
 ```
-Monitor your Bitaxe fleet
+Requires Bitaxe Baller desktop
 ```
+(30 char exact — leads with the prerequisite so users don't download
+expecting a standalone tool.)
 
 ### Promotional Text (170 char max — can update without resubmitting)
 ```
-Reach your Bitaxe fleet from anywhere. Face ID unlock. Live hashrate, temps, and history — no port forwarding, no VPN, no fixed IP needed.
+Phone viewer for the Bitaxe Baller desktop app. Install the desktop on your home Mac/PC/Umbrel first — this app then shows your fleet from anywhere over our relay.
 ```
+(163 char.)
 
 ### Description (4000 char max) — REWRITTEN
 ```
-Bitaxe Baller is a native iOS companion app for the Bitaxe Baller desktop application, the open-source dashboard a lot of Bitaxe hobbyists already use on their Mac or PC for monitoring and tuning their home Bitcoin solo-mining hardware.
+IMPORTANT — Bitaxe Baller for iOS is a companion viewer for the Bitaxe Baller desktop application. It does NOT work as a standalone tool. You need to install Bitaxe Baller on your home Mac, Windows PC, or Umbrel server FIRST (free download at bitaxeballer.com), add your Bitaxe miners there, enable Remote Access in the desktop's Pro panel, and then pair this iOS app to that desktop install. Without a paired desktop, this app has nothing to show.
+
+The Bitaxe Baller desktop app is the open-source dashboard a lot of Bitaxe hobbyists already use on their Mac or PC for monitoring and tuning their home Bitcoin solo-mining hardware.
 
 If you already run the desktop app at home, this companion app brings the live view to your phone. No port forwarding, no VPN, no fixed IP. The desktop app on your home network opens an outbound connection to relay.bitaxeballer.com; the iOS app talks to the same relay and is routed to your devices using your license key as the credential. The relay does dumb routing only — all product logic stays on your local install.
 
