@@ -488,19 +488,63 @@ async function pairAndConnect(pairCode) {
   return deviceToken;
 }
 
+// Reconnect state — stash the device token so onclose can reconnect with it
+// without going back through the full pair flow.
+let _currentDeviceToken = null;
+let _reconnectBackoffMs = 1000;
+let _reconnectTimer = null;
+const _RECONNECT_BACKOFF_CAP_MS = 60_000;
+let _connectedAtMs = 0;
+
 async function connectWithDeviceToken(deviceToken) {
   // Open WS /ws/client with the device_token. Relay's shape check
   // (no dot in token) routes it through device_lookup → install_uuid
   // for the paired desktop, then applies free-tier stripping if needed.
+  _currentDeviceToken = deviceToken;
+  _reconnectBackoffMs = 1000;  // reset backoff on a fresh pair
   await openWs(deviceToken);
   showOnly('fleet-view', 'status-bar');
   startPolling();
 }
 
+// Schedule an auto-reconnect when the WS closes for any reason (transient
+// network blip, relay-side restart, brief desktop disconnect, OS-level
+// background-suspend on Android/iOS). Without this the user has to
+// force-close + reopen the app every time anything blips — caught by
+// Nathan 2026-06-15 ("when I restart my Android app, the info is there"
+// → the data IS available, the WS just never tried to reconnect).
+//
+// Exponential backoff capped at 60s so we don't hammer the relay if it's
+// actually down. Resets to 1s when a connection lives >30s (proves we
+// were genuinely connected, not just papering over a hard reject).
+function _scheduleReconnect() {
+  if (_reconnectTimer || !_currentDeviceToken) return;
+  const delay = _reconnectBackoffMs;
+  console.log('[bb] ws reconnect in', delay, 'ms');
+  _reconnectTimer = setTimeout(async () => {
+    _reconnectTimer = null;
+    try {
+      await openWs(_currentDeviceToken);
+      // Successful reconnect — startPolling is already running but its
+      // requests have been failing with "Not connected". Next tick after
+      // ws.readyState flips to 1 they'll start succeeding again.
+    } catch (e) {
+      console.log('[bb] reconnect failed:', e && e.message);
+      _reconnectBackoffMs = Math.min(_reconnectBackoffMs * 2, _RECONNECT_BACKOFF_CAP_MS);
+      _scheduleReconnect();
+    }
+  }, delay);
+}
+
 function openWs(token) {
   return new Promise((resolve, reject) => {
     const sock = new WebSocket(`${RELAY_WS}/ws/client?token=${encodeURIComponent(token)}`);
-    sock.onopen = () => { ws = sock; setConn(true); resolve(); };
+    sock.onopen = () => {
+      ws = sock;
+      setConn(true);
+      _connectedAtMs = Date.now();
+      resolve();
+    };
     sock.onerror = () => { setConn(false); reject(new Error('WebSocket failed')); };
     sock.onclose = () => {
       setConn(false);
@@ -509,6 +553,14 @@ function openWs(token) {
         p.reject(new Error('WebSocket closed'));
       }
       pending.clear();
+      // Reset backoff if the closed connection lived long enough to be
+      // a "real" connection (>30s) — that way a transient blip after
+      // hours of uptime restarts fast, but a flapping relay doesn't.
+      if (_connectedAtMs && Date.now() - _connectedAtMs > 30_000) {
+        _reconnectBackoffMs = 1000;
+      }
+      _connectedAtMs = 0;
+      _scheduleReconnect();
     };
     sock.onmessage = (ev) => {
       let msg; try { msg = JSON.parse(ev.data); } catch { return; }
@@ -547,6 +599,26 @@ function setConn(connected) {
   $('conn-dot').classList.toggle('connected', connected);
   $('conn-label').textContent = connected ? 'connected' : 'disconnected';
 }
+
+// When the app comes back to the foreground (user tapped back into Bitaxe
+// Baller from another app, or unlocked their phone), iOS and Android may
+// have suspended our WebSocket while we were in the background. The OS
+// doesn't always notify us via onclose immediately — sometimes the socket
+// is silently dead. Check the actual readyState on visibility change and
+// trigger a reconnect if the socket isn't OPEN.
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState !== 'visible') return;
+  if (!_currentDeviceToken) return;
+  // If the socket is already healthy, nothing to do.
+  if (ws && ws.readyState === 1) return;
+  // Stale socket — force a fresh reconnect attempt right away (skip the
+  // backoff wait). The onclose handler may not have fired yet if the OS
+  // killed the connection mid-suspend without a clean TCP close.
+  console.log('[bb] foreground — socket not OPEN, reconnecting');
+  _reconnectBackoffMs = 1000;
+  if (_reconnectTimer) { clearTimeout(_reconnectTimer); _reconnectTimer = null; }
+  _scheduleReconnect();
+});
 
 function fmt(n, d = 2) { return (n == null || !isFinite(n)) ? '—' : Number(n).toFixed(d); }
 function escapeHtml(s) { return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
