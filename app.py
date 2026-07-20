@@ -748,6 +748,10 @@ _BLOCK_REWARDS = {
 #   from the same host. We'd need a (host, port) → chain table for
 #   those; punted until a user hits the case.
 _CHAIN_PATTERNS = [
+    # quai first: its needle is unambiguous (no other coin has "quai" in a
+    # hostname) and it must win over multi-coin hosts also listed below —
+    # e.g. quai.viabtc.com would otherwise match viabtc → xec.
+    ("quai", ("quai", "qu.ai")),
     ("xec", ("xec.", "-xec.", "ecash", "bcha", "xeggex", "viabtc")),
     ("bsv", ("bsv.", "-bsv.", "bitcoin-sv", "bitcoin sv")),
     ("dgb", ("dgb.", "-dgb.", "digibyte",
@@ -786,6 +790,15 @@ def _infer_chain(stratum_url, stratum_port=0, stratum_user=""):
     # (Legacy 'D...' base58 collides with DOGE; don't read those.)
     if user.startswith("dgb1"):
         return "dgb"
+    # Quai is EVM-based: payout addresses are 0x + 40 hex, visually identical to
+    # an Ethereum address (Quai shards them internally, but that's invisible in
+    # the format). Generically '0x' is ambiguous across all EVM chains — BUT no
+    # other coin Baller supports uses a 0x address (they're all SHA-256 with
+    # base58 / bech32 / CashAddr payout formats). So within this app's SHA-256
+    # universe a 0x worker is a reliable Quai tell, and it catches Quai even on a
+    # generic/multi-coin pool or private node whose URL doesn't contain "quai".
+    if user.startswith("0x"):
+        return "quai"
     if not stratum_url:
         return "btc"
     u = str(stratum_url).lower()
@@ -818,6 +831,10 @@ _CHAIN_INFERENCE_FIXTURES = [
     ("viabtc XEC",             "xec.viabtc.com",          3333,  "user.worker",            "xec"),
     ("bsv pool",               "stratum.bsv.example",     3333,  "1abc...x.worker",        "bsv"),
     ("nmc pool",               "namecoin.example",        3333,  "N...x.worker",           "nmc"),
+    ("kryptex Quai SHA",       "quai-sha256.kryptex.com", 8888,  "user.NerdQAxe",          "quai"),
+    ("2miners Quai SHA",       "sha.quai.2miners.com",    6060,  "0xabc...worker",         "quai"),
+    ("quai over viabtc host",  "quai.viabtc.com",         3333,  "user.worker",            "quai"),
+    ("quai 0x addr, plain URL", "generic-solo.example",   3333,  "0xAbC123...def.NerdQAxe", "quai"),
     ("unmatched → BTC",        "weirdpool.example",       3333,  "bc1q...x.worker",        "btc"),
 ]
 
@@ -3971,7 +3988,13 @@ def api_device_rename():
 
 # Chains a user can manually pin a device to. Matches the chain_name map +
 # the stats fetchers; auto-detection remains the default.
-_VALID_CHAINS = {"btc", "bch", "bsv", "xec", "dgb", "nmc"}
+# quai is SHA-256-mineable (Quai's "Quai-SHA" merge-mined workshares — a BM1370
+# hashes it natively), so it's a valid grouping/label + auto-detect target. It has
+# no entry in _BLOCK_REWARDS / _CHAIN_FETCHERS: Quai's SHA difficulty and per-share
+# reward don't map onto the Bitcoin-style solo-block-odds model and there's no clean
+# free difficulty feed, so the block-probability panel just hides for Quai devices
+# (_solo_block_payload → None). Grouping and the QUAI pool tag still work.
+_VALID_CHAINS = {"btc", "bch", "bsv", "xec", "dgb", "nmc", "quai"}
 
 
 @app.route("/api/devices/chain", methods=["POST"])
