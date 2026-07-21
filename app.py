@@ -155,10 +155,14 @@ poll_stop_flag = threading.Event()
 
 
 def default_config():
+    # `port`: None → auto (prefer 80, fall back to 5050). An integer pins a
+    # specific listen port via the in-app Advanced setting. The PORT env var,
+    # when set, overrides this (see _pick_port).
     return {
         "devices": [],
         "poll_interval": DEFAULT_POLL,
         "electricity": {"rate": DEFAULT_ELEC_RATE, "currency": DEFAULT_CURRENCY},
+        "port": None,
     }
 
 
@@ -2313,8 +2317,11 @@ def _request_is_from_host() -> bool:
 
 @app.route("/")
 def index():
+    is_host = _request_is_from_host()
     return render_template("dashboard.html", presets=PRESETS, bounds=BOUNDS,
-                           show_logs_link=_request_is_from_host())
+                           show_logs_link=is_host,
+                           show_port_setting=is_host and not port_is_env_locked(),
+                           current_port=PORT)
 
 
 @app.route("/healthz")
@@ -2587,6 +2594,47 @@ def api_electricity_set():
         cfg["electricity"] = {"rate": round(rate, 4), "currency": currency}
         save_config(cfg)
     return jsonify({"ok": True, "rate": round(rate, 4), "currency": currency})
+
+
+@app.route("/api/config/port", methods=["POST"])
+def api_config_port():
+    """Set (or clear) the preferred listen port, persisted to config.json.
+    Takes effect on the NEXT launch — the server is already bound to the
+    current port for this session. Body: {"port": <int>|null}; null restores
+    the automatic 80→5050 choice.
+
+    Host-only: a remote/phone session shouldn't be able to move the desktop's
+    port out from under the person at the machine (and possibly lock them out).
+    The UI already hides the control off-host; this is the backstop."""
+    if not _request_is_from_host():
+        return jsonify({"ok": False, "error": "Port can only be changed from the "
+                                               "machine running Bitaxe Baller."}), 403
+    if port_is_env_locked():
+        return jsonify({"ok": False, "error": "Port is pinned by the PORT environment "
+                                              "variable and can't be changed here."}), 409
+
+    body = request.get_json(silent=True) or {}
+    raw = body.get("port")
+
+    if raw is None or raw == "":
+        new_port = None
+    else:
+        try:
+            new_port = _valid_port(raw)
+        except (ValueError, TypeError):
+            return jsonify({"ok": False, "error": "Port must be a whole number "
+                                                  "between 1 and 65535."}), 400
+
+    cfg = load_config()
+    cfg["port"] = new_port
+    save_config(cfg)
+
+    if new_port is None:
+        msg = "Port reset to automatic (80, or 5050 if unavailable). Restart to apply."
+    else:
+        msg = f"Port set to {new_port}. Restart Bitaxe Baller to apply."
+    return jsonify({"ok": True, "port": new_port, "current_port": PORT,
+                    "restart_required": new_port != PORT, "message": msg})
 
 
 @app.route("/api/logs/open", methods=["POST"])
@@ -5516,15 +5564,51 @@ def _can_bind(port):
         return False
 
 
+def _valid_port(p):
+    """Coerce p to an int and confirm it's a usable TCP port. Raises
+    ValueError/TypeError on anything out of the 1-65535 range."""
+    p = int(p)
+    if not (1 <= p <= 65535):
+        raise ValueError(f"port {p} out of range 1-65535")
+    return p
+
+
 def _pick_port():
-    """If PORT env var is set, honor it. Otherwise prefer 80 for clean URLs
-    (no :port in the address bar) and fall back to 5050 when port 80 isn't
-    available — typically because the app isn't running as root."""
+    """Resolve the listen port, in precedence order:
+
+      1. PORT env var — highest, so container/self-host deploys (Umbrel sets
+         PORT=13701) and `PORT=8080 python app.py` always win.
+      2. `port` in config.json — the in-app Advanced setting. The server binds
+         once at startup, so a change here takes effect on next launch.
+      3. Auto: prefer 80 for clean URLs (no :port in the address bar), falling
+         back to 5050 when 80 isn't bindable — typically because the app isn't
+         running as root.
+
+    An invalid value at any tier is ignored rather than fatal, so a bad env var
+    or a hand-edited config can't wedge startup."""
     if "PORT" in os.environ:
-        return int(os.environ["PORT"])
+        try:
+            return _valid_port(os.environ["PORT"])
+        except (ValueError, TypeError):
+            print(f"[port] ignoring invalid PORT env var {os.environ['PORT']!r}")
+    try:
+        cfg_port = load_config().get("port")
+    except Exception:
+        cfg_port = None
+    if cfg_port is not None:
+        try:
+            return _valid_port(cfg_port)
+        except (ValueError, TypeError):
+            print(f"[port] ignoring invalid port {cfg_port!r} in config.json")
     if _can_bind(80):
         return 80
     return 5050
+
+
+def port_is_env_locked():
+    """True when the PORT env var pins the port, making the in-app setting a
+    no-op. Umbrel/Docker are always in this state. The UI reflects it."""
+    return "PORT" in os.environ
 
 
 PORT = _pick_port()

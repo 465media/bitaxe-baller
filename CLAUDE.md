@@ -34,7 +34,7 @@ python app.py                     # port 5050 (no sudo)
 sudo $(which python) app.py       # port 80 (clean URLs, e.g. http://bitaxe-baller.local)
 ```
 
-The app prefers port 80 if it can bind it (yields cleaner URLs since browsers default to 80 for `http://`), and falls back to 5050 when it can't (typical when not running as root). Set `PORT=...` to override and skip the auto-pick.
+Port selection precedence (`_pick_port`): **`PORT` env var → `port` in `config.json` → auto**. Auto prefers 80 if it can bind it (cleaner URLs, browsers default to 80 for `http://`) and falls back to 5050 when it can't (typical when not running as root). The `config.json port` tier is the in-app **Advanced** setting (footer "port NNNN" link on the dashboard, host-only, hidden when `PORT` env pins the port); it's read once at startup so a change needs an app restart. Umbrel/Docker set `PORT` via env, so the env tier keeps them unaffected.
 
 The startup banner prints every URL the dashboard is reachable on:
 - `http://localhost[:port]` — this machine
@@ -84,6 +84,7 @@ config.json                  # device list (gitignored)
 - `POST /api/pool-schedules` — create (**Pro**). Validates the profile exists, time is HH:MM, days ⊆ 0–6, and every ip is a tracked device.
 - `POST /api/pool-schedules/<id>/update` — edit, or enable/disable (enable-only fast path when body is just `{enabled}`). Enabling requires Pro; disabling is always allowed.
 - `POST /api/pool-schedules/<id>/delete` — remove a schedule (always allowed). Schedules fire from `_run_pool_schedules()` inside `poll_loop`; monitor-only (Braiins) targets are skipped.
+- `POST /api/config/port` — set/clear the preferred listen port in `config.json` (body `{port: <int>|null}`; null = auto). Host-only (403 otherwise); 409 when `PORT` env pins the port. Takes effect on next launch.
 - `POST /api/devices/{add,remove,rename,tune,preset,restart,reset_session}`
 - `POST /api/devices/reorder` — **Pro.** Persist a custom home-dashboard card order. Body `{order:[ip,...]}`. Rewrites `cfg["devices"]` (and the in-memory `state` dict, whose iteration order drives `/api/devices`) to match; IPs omitted from `order` keep their relative position, appended after the given ones. The write is Pro-gated (403 otherwise) but the saved order itself isn't tied to license state — it persists in `config.json` even if Pro lapses. Drag UI lives in `dashboard.html` (Pointer Events, not HTML5 DnD — needed for iOS/Android/Capacitor), constrained to reordering within one coin section at a time.
 - `POST /api/devices/pool` — body `{ip, stratumURL?, stratumPort?, ..., fallbackStratumURL?, ..., restart?}`. Validates and PATCHes the device, optionally restarts. Empty / missing fields are skipped (worker passwords blank-by-default).
@@ -108,7 +109,7 @@ Bounds are enforced server-side in `api_device_tune` and `api_device_pool`. Neve
 
 ## Environment variables
 
-- `PORT` — explicitly pin a port. Unset → app tries `80` first (clean URL), falls back to `5050` if it can't bind.
+- `PORT` — explicitly pin a port (highest precedence, overrides the `config.json port` setting). Unset → app uses the `config.json port` if set, else tries `80` first (clean URL) and falls back to `5050` if it can't bind.
 - `HOST` (default `0.0.0.0`; set to `127.0.0.1` to keep it local-only — also disables mDNS).
 - `MDNS_ENABLED` (default `1`; set to `0` to skip mDNS publication).
 - `MDNS_NAME` (default `bitaxe-baller`; the `.local` host name to publish).

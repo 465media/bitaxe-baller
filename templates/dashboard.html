@@ -289,10 +289,24 @@
 </details>
 
 <footer>
-  <div>Bitaxe Baller v1.22.0 · no warranty, use at your own risk{% if show_logs_link %} · <a href="#" class="footer-link" id="open-logs-link" data-tip="Opens the CSV telemetry folder in Finder/Explorer — one file per device per day, kept forever." data-tip-pos="top">logs folder</a>{% endif %}</div>
+  <div>Bitaxe Baller v1.22.0 · no warranty, use at your own risk{% if show_logs_link %} · <a href="#" class="footer-link" id="open-logs-link" data-tip="Opens the CSV telemetry folder in Finder/Explorer — one file per device per day, kept forever." data-tip-pos="top">logs folder</a>{% endif %}{% if show_port_setting %} · <a href="#" class="footer-link" id="port-edit-link" data-tip="Change the port the dashboard listens on. Takes effect after you restart the app." data-tip-pos="top">port {{ current_port }}</a>{% endif %}</div>
   <div class="credits">made with <span class="heart">♥</span> in NH, by <a href="https://465-media.com" target="_blank" rel="noopener">465-media.com</a></div>
   <div>last update <span id="last-update">—</span></div>
 </footer>
+
+{% if show_port_setting %}
+<div class="port-panel" id="port-panel" hidden>
+  <div class="port-panel-row">
+    <label for="port-input">Listen port</label>
+    <input type="number" id="port-input" min="1" max="65535" value="{{ current_port }}"
+           data-tip="1–65535. Leave blank and save to restore automatic (80, or 5050 if 80 is unavailable)." data-tip-pos="top">
+    <button type="button" class="primary" id="port-save">Save</button>
+    <button type="button" id="port-auto" data-tip="Clear the fixed port and go back to automatic 80→5050 selection.">Auto</button>
+    <button type="button" class="close" id="port-close" aria-label="Close">✕</button>
+  </div>
+  <div class="port-panel-note">Currently on port <strong>{{ current_port }}</strong>. Changes apply after you quit and reopen Bitaxe Baller.</div>
+</div>
+{% endif %}
 
 <div class="toast-host" id="toasts"></div>
 
@@ -608,6 +622,45 @@ document.getElementById('add-ip').addEventListener('keydown', e => {
 document.getElementById('add-label').addEventListener('keydown', e => {
   if (e.key === 'Enter') document.getElementById('add-btn').click();
 });
+
+// ---- listen port (footer, host-only; hidden when PORT env pins it) ----
+// The panel only exists in the DOM for host sessions with no PORT override,
+// so every lookup is guarded on the edit link being present.
+(function () {
+  const editLink = document.getElementById('port-edit-link');
+  if (!editLink) return;
+  const panel = document.getElementById('port-panel');
+  const input = document.getElementById('port-input');
+  const saveBtn = document.getElementById('port-save');
+
+  function togglePanel(show) {
+    panel.hidden = (show === undefined) ? !panel.hidden : !show;
+    if (!panel.hidden) input.focus();
+  }
+
+  async function savePort(raw) {
+    saveBtn.disabled = true;
+    try {
+      const res = await api('/api/config/port', 'POST', { port: raw });
+      if (res.ok) {
+        toast(res.message, res.restart_required ? 'warn' : 'info', 8000);
+        togglePanel(false);
+      } else {
+        toast(res.error || 'Could not set port', 'error', 8000);
+      }
+    } catch (err) {
+      toast('Could not set port: ' + err.message, 'error');
+    } finally {
+      saveBtn.disabled = false;
+    }
+  }
+
+  editLink.addEventListener('click', e => { e.preventDefault(); togglePanel(); });
+  document.getElementById('port-close').addEventListener('click', () => togglePanel(false));
+  saveBtn.addEventListener('click', () => savePort(input.value.trim()));
+  document.getElementById('port-auto').addEventListener('click', () => { input.value = ''; savePort(null); });
+  input.addEventListener('keydown', e => { if (e.key === 'Enter') saveBtn.click(); });
+})();
 
 // ---- network scan ----
 let scanFlickerInterval = null;
