@@ -98,7 +98,7 @@
 </section>
 
 <footer>
-  <div>Bitaxe Baller v1.19.0 · no warranty, use at your own risk{% if show_logs_link %} · <a href="#" class="footer-link" id="open-logs-link" data-tip="Opens the CSV telemetry folder in Finder/Explorer — one file per device per day, kept forever." data-tip-pos="top">logs folder</a>{% endif %}</div>
+  <div>Bitaxe Baller v1.19.1 · no warranty, use at your own risk{% if show_logs_link %} · <a href="#" class="footer-link" id="open-logs-link" data-tip="Opens the CSV telemetry folder in Finder/Explorer — one file per device per day, kept forever." data-tip-pos="top">logs folder</a>{% endif %}</div>
   <div class="credits">made with <span class="heart">♥</span> in NH, by <a href="https://465-media.com" target="_blank" rel="noopener">465-media.com</a></div>
   <div>last update <span id="last-update">—</span></div>
 </footer>
@@ -144,9 +144,29 @@ function _bpFmtOneIn(n) {
   return Math.round(n).toLocaleString();
 }
 
+// Chains we support for grouping but NOT solo-block-probability: no clean free
+// difficulty/reward feed and/or a mining model that doesn't fit Bitcoin-style
+// block odds. Show a short notice instead of silently hiding the panel — but
+// only for these known chains, so a BTC device mid-warmup (stats not fetched
+// yet) still falls through to '' rather than flashing "unavailable".
+const NO_BLOCKPROB_CHAINS = {
+  quai: 'Quai — its merge-mined SHA-256 workshares have no public difficulty feed that maps to solo-block odds',
+};
+
 function blockProbPanel(d) {
   const bp = d && d.blockProbability;
-  if (!bp || !bp.difficulty) return '';
+  if (!bp || !bp.difficulty) {
+    const why = d && NO_BLOCKPROB_CHAINS[d.chain];
+    if (why) {
+      return `
+        <div class="detail-section block-prob">
+          <h2>solo block probability</h2>
+          <div class="bp-unavailable" data-tip="Grouping, tuning and monitoring all work normally for this chain — only the block-odds estimate is unavailable.">Not available for ${escapeHtml(why)}.</div>
+        </div>
+      `;
+    }
+    return '';
+  }
   const proximityPct = Math.max(0, Math.min(100, (bp.proximity || 0) * 100));
   // Small-value coins (XEC, NMC) need decimals or the user sees "$0" — only
   // round to whole dollars when the value is comfortably above the cent line.
@@ -531,6 +551,7 @@ function renderDetail(d) {
               <option value="xec"${d.chainOverride === 'xec' ? ' selected' : ''}>XEC</option>
               <option value="dgb"${d.chainOverride === 'dgb' ? ' selected' : ''}>DGB</option>
               <option value="nmc"${d.chainOverride === 'nmc' ? ' selected' : ''}>NMC</option>
+              <option value="quai"${d.chainOverride === 'quai' ? ' selected' : ''}>QUAI</option>
             </select>
           </span>
         </span>

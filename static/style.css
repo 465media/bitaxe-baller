@@ -2455,6 +2455,11 @@
     font-size: 12px;
     margin-bottom: 14px;
   }
+  .detail-section.block-prob .bp-unavailable {
+    color: var(--dim);
+    font-size: 12px;
+    line-height: 1.5;
+  }
   .detail-section.block-prob .bp-diff,
   .detail-section.block-prob .bp-reward,
   .detail-section.block-prob .bp-usd {
