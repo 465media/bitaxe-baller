@@ -156,7 +156,9 @@
   .summary {
     position: relative; z-index: 1;
     display: grid;
-    grid-template-columns: repeat(4, 1fr);
+    /* auto-fit so the tiles (now 5 with electricity cost) flow and wrap on
+       narrow screens instead of squeezing a fixed 5-across. */
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
     gap: 1px;
     background: var(--border);
     border-bottom: 1px solid var(--border);
@@ -1118,6 +1120,50 @@
   .compact-stats .s .v.warn { color: var(--warn); }
   .compact-stats .s .v.crit { color: var(--crit); }
   .compact-stats .s .v.info { color: var(--info); }
+
+  /* Running-cost line — its own slim row under the stat grid. A headline
+     "what's this costing me" metric, so it gets dedicated space. */
+  .compact-cost {
+    display: flex; align-items: baseline; gap: 8px;
+    padding: 7px 12px;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg-2);
+  }
+  .compact-cost .cc-l {
+    font-size: 9px; color: var(--dim);
+    text-transform: uppercase; letter-spacing: 0.14em;
+    margin-right: auto;
+  }
+  .compact-cost .cc-v { font-size: 14px; color: var(--text); font-weight: 500; }
+  .compact-cost .cc-mo { font-size: 11px; color: var(--dim); }
+  .compact-cost .cc-u { font-size: 9px; color: var(--dim); margin-left: 2px; }
+
+  /* Fleet cost tile + rate editor link */
+  .summary .cell-cost .val .cost-cur { font-size: 20px; margin-right: 1px; }
+  .cost-rate-link {
+    background: none; border: none; padding: 0; cursor: pointer;
+    color: var(--accent); font: inherit; font-size: 11px;
+    text-decoration: underline; text-underline-offset: 2px;
+  }
+  .cost-rate-link:hover { opacity: 0.8; }
+
+  /* Electricity rate modal (reuses .pro-modal backdrop/panel) */
+  .elec-modal-panel { max-width: 440px; width: 92vw; text-align: left; }
+  .elec-modal-sub { color: var(--dim); font-size: 13px; line-height: 1.5; margin: 0 0 16px; }
+  .elec-modal-grid {
+    display: grid; grid-template-columns: 1fr auto auto; gap: 12px; align-items: end;
+  }
+  .elec-modal-grid label { display: flex; flex-direction: column; gap: 4px; font-size: 11px; color: var(--dim); }
+  .elec-modal-grid label span { text-transform: uppercase; letter-spacing: 0.12em; }
+  .elec-modal-grid input {
+    background: var(--bg); border: 1px solid var(--border); color: var(--text);
+    padding: 7px 9px; border-radius: 4px; font: inherit; font-size: 13px;
+  }
+  .elec-modal-foot { margin-top: 12px; font-size: 12px; color: var(--dim); }
+  @media (max-width: 460px) {
+    .elec-modal-grid { grid-template-columns: 1fr 1fr; }
+    .elec-modal-grid .primary { grid-column: 1 / -1; }
+  }
   .compact-stats .s .v .u { font-size: 9px; color: var(--dim); margin-left: 3px; }
 
   .compact-rec {
@@ -1247,6 +1293,57 @@
   .pool-profile-row button {
     white-space: nowrap;
   }
+
+  /* Pool schedules (Pro) — time-of-day + weekday pool switching. */
+  .pool-schedules {
+    border: 1px dashed var(--border);
+    background: var(--bg-elev);
+    border-radius: 6px;
+    padding: 10px 14px;
+    margin-bottom: 16px;
+  }
+  .pool-schedules:empty { display: none; }
+  .pool-sched-head { margin-bottom: 10px; }
+  .pool-sched-title {
+    font-size: 11px; text-transform: uppercase; letter-spacing: 0.14em;
+    color: var(--dim); font-weight: 600;
+  }
+  .pool-sched-locked p { color: var(--dim); font-size: 13px; line-height: 1.55; margin: 0 0 12px; }
+
+  .pool-sched-list { display: flex; flex-direction: column; gap: 6px; margin-bottom: 12px; }
+  .pool-sched-empty { color: var(--dim); font-size: 12px; padding: 4px 0 8px; }
+  .pool-sched-row {
+    display: flex; align-items: center; gap: 10px;
+    padding: 8px 10px; border: 1px solid var(--border); border-radius: 5px;
+    background: var(--bg-2);
+  }
+  .pool-sched-row.disabled { opacity: 0.5; }
+  .pool-sched-toggle { display: flex; align-items: center; }
+  .pool-sched-summary { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; flex: 1; }
+  .pool-sched-summary .pss-when { font-size: 13px; color: var(--text); }
+  .pool-sched-summary .pss-what { font-size: 12px; color: var(--accent); }
+  .pool-sched-summary .pss-last { font-size: 11px; color: var(--dim); margin-left: auto; }
+  .pool-sched-del { white-space: nowrap; }
+
+  .pool-sched-add {
+    border-top: 1px solid var(--border); padding-top: 12px;
+    display: flex; flex-direction: column; gap: 10px;
+  }
+  .pss-add-row { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px; }
+  .pss-field { display: flex; flex-direction: column; gap: 4px; font-size: 11px; color: var(--dim); }
+  .pss-field span { text-transform: uppercase; letter-spacing: 0.12em; }
+  .pss-field select, .pss-field input { min-width: 150px; }
+  .pss-checkbox { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text); }
+  .pss-days-row { align-items: center; gap: 8px; }
+  .pss-days-label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.12em; color: var(--dim); }
+  .pss-day { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; color: var(--text); }
+  .pss-days-quick { display: inline-flex; gap: 6px; margin-left: auto; }
+  .pss-days-quick button {
+    background: none; border: 1px solid var(--border); color: var(--dim);
+    font: inherit; font-size: 11px; padding: 2px 8px; border-radius: 4px; cursor: pointer;
+  }
+  .pss-days-quick button:hover { color: var(--accent); border-color: var(--accent); }
+  .pool-sched-add > .primary { align-self: flex-start; }
 
   /* Pool config form */
   .pool-form {

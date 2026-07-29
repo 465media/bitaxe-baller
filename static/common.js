@@ -320,7 +320,12 @@ async function api(path, method = 'GET', body = null) {
   if (body) opts.body = JSON.stringify(body);
   const res = await fetch(path, opts);
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.error || `${res.status} ${res.statusText}`);
+  if (!res.ok) {
+    const err = new Error(data.error || `${res.status} ${res.statusText}`);
+    if (data.code) err.code = data.code;   // e.g. 'pro_required' — lets callers branch on it
+    err.status = res.status;
+    throw err;
+  }
   return data;
 }
 

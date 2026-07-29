@@ -98,7 +98,7 @@
 </section>
 
 <footer>
-  <div>Bitaxe Baller v1.19.0 · no warranty, use at your own risk{% if show_logs_link %} · <a href="#" class="footer-link" id="open-logs-link" data-tip="Opens the CSV telemetry folder in Finder/Explorer — one file per device per day, kept forever." data-tip-pos="top">logs folder</a>{% endif %}</div>
+  <div>Bitaxe Baller v1.20.0 · no warranty, use at your own risk{% if show_logs_link %} · <a href="#" class="footer-link" id="open-logs-link" data-tip="Opens the CSV telemetry folder in Finder/Explorer — one file per device per day, kept forever." data-tip-pos="top">logs folder</a>{% endif %}</div>
   <div class="credits">made with <span class="heart">♥</span> in NH, by <a href="https://465-media.com" target="_blank" rel="noopener">465-media.com</a></div>
   <div>last update <span id="last-update">—</span></div>
 </footer>
@@ -331,6 +331,8 @@ function poolForm(d) {
     </div>
 
     <div id="pool-profiles-panel" class="pool-profiles" data-tip="Save your current pool config as a named profile, then apply it to any device with one click. Useful for bouncing between pools (BTC ↔ BCH ↔ different BTC pools). Passwords aren't stored in profiles — if a profile needs a non-default password, type it on the form below after applying."></div>
+
+    <div id="pool-schedules-panel" class="pool-schedules"></div>
 
     <form class="pool-form" id="pool-form" onsubmit="event.preventDefault(); applyPool();">
       <div class="pool-block">
@@ -568,6 +570,7 @@ function renderDetail(d) {
         ${isBraiins
           ? `<div class="stat" data-tip="Approximate efficiency from BOSer's reported power draw. Braiins mini-miners run different silicon than Bitaxe, so this isn't color-graded against Bitaxe thresholds."><div class="l">efficiency</div><div class="v info">${e.jPerTh}<span class="u">J/TH</span></div></div>`
           : `<div class="stat" data-tip="Joules per terahash. Lower is more efficient. Green <16, yellow 19–22, red >22."><div class="l">efficiency</div><div class="v ${effClass(e.jPerTh)}">${e.jPerTh}<span class="u">J/TH</span></div></div>`}
+        ${d.cost ? `<div class="stat" data-tip="Estimated electricity cost at this power draw and your rate (${escapeHtml(d.cost.currency || '$')}${d.cost.rate}/kWh). Set the rate on the home page's cost tile. Estimate only — actual wall draw is ~5–10% higher."><div class="l">running cost</div><div class="v">${escapeHtml(d.cost.currency || '$')}${(d.cost.perDay ?? 0).toFixed(2)}<span class="u">/day · ${escapeHtml(d.cost.currency || '$')}${(d.cost.perMonth ?? 0).toFixed(2)}/mo</span></div></div>` : ''}
       </div>
 
       <div class="rolling" data-tip="Rolling hashrate averages over different windows. The 15m average is the standard for comparing tuning settings — give a new setting at least 15 minutes before deciding it's better or worse.">
@@ -806,6 +809,146 @@ window.deleteSelectedPoolProfile = async () => {
   } catch (e) { toast('Delete failed: ' + e.message, 'error'); }
 };
 
+// ----- Pool schedules (Pro) -----
+// Time-of-day + weekday pool switching. A schedule applies a saved pool profile
+// to this device at a chosen local time on chosen days. Built on pool profiles
+// and the /api/pool-schedules endpoints. Re-renders each poll (like the profiles
+// panel); the _isUserEditing() guard keeps the add-form from being wiped while
+// the user fills it in.
+const _WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];  // index = Python weekday()
+
+function _fmtScheduleDays(days) {
+  const set = new Set(days || []);
+  if (set.size === 7) return 'every day';
+  if (set.size === 5 && [0,1,2,3,4].every(d => set.has(d))) return 'weekdays';
+  if (set.size === 2 && set.has(5) && set.has(6)) return 'weekends';
+  return (days || []).slice().sort((a,b)=>a-b).map(d => _WEEKDAYS[d]).join(' ');
+}
+
+async function renderPoolSchedulesPanel() {
+  const host = document.getElementById('pool-schedules-panel');
+  if (!host) return;
+
+  let data;
+  try { data = await api('/api/pool-schedules'); }
+  catch (e) { host.innerHTML = ''; return; }
+  const proActive = !!data.pro_active;
+  // Only schedules that target THIS device.
+  const schedules = (data.schedules || []).filter(s => (s.ips || []).includes(DEVICE_IP));
+
+  if (!proActive) {
+    host.innerHTML = `
+      <div class="pool-sched-head">
+        <span class="pool-sched-title">🕒 scheduled pool switching <span class="pro-tag">PRO</span></span>
+      </div>
+      <div class="pool-sched-locked">
+        <p>Automatically switch this miner to a saved pool profile on a schedule — e.g. move to a solo/lottery pool at <strong>23:00 on weekends</strong>, back to your steady pool Monday morning. Built on your saved pool profiles.</p>
+        <button type="button" class="primary" onclick="openProModal()" data-tip="Open the Pro activation modal.">Activate Pro →</button>
+      </div>`;
+    return;
+  }
+
+  const profiles = await _fetchPoolProfiles();
+  const profName = id => (profiles.find(p => p.id === id)?.name) || '(deleted profile)';
+
+  const rows = schedules.length ? schedules.map(s => `
+    <div class="pool-sched-row ${s.enabled ? '' : 'disabled'}">
+      <label class="pool-sched-toggle" data-tip="Enable or pause this schedule. Paused schedules are kept but never fire.">
+        <input type="checkbox" ${s.enabled ? 'checked' : ''} onchange="toggleSchedule('${s.id}', this.checked)"> </label>
+      <div class="pool-sched-summary">
+        <span class="pss-when"><strong>${escapeHtml(s.time)}</strong> · ${escapeHtml(_fmtScheduleDays(s.days))}</span>
+        <span class="pss-what">→ ${escapeHtml(profName(s.profile_id))}${s.restart ? ' · restart' : ''}</span>
+        ${s.last_run ? `<span class="pss-last" data-tip="Date this schedule last applied (local time).">last run ${escapeHtml(s.last_run)}</span>` : ''}
+      </div>
+      <button type="button" class="danger pool-sched-del" onclick="deleteSchedule('${s.id}')" data-tip="Delete this schedule. Doesn't change the device's current pool.">delete</button>
+    </div>`).join('') : '<div class="pool-sched-empty">No schedules yet for this device.</div>';
+
+  const profileOpts = profiles.length
+    ? profiles.map(p => `<option value="${escapeHtml(p.id)}">${escapeHtml(p.name)}</option>`).join('')
+    : '';
+
+  const dayChecks = _WEEKDAYS.map((lbl, i) =>
+    `<label class="pss-day"><input type="checkbox" class="pss-day-cb" value="${i}"><span>${lbl}</span></label>`
+  ).join('');
+
+  host.innerHTML = `
+    <div class="pool-sched-head">
+      <span class="pool-sched-title" data-tip="Apply a saved pool profile to this device automatically at a set time on set days. Fires while the app is running — if the machine is off at that minute, that day is skipped (no catch-up).">🕒 scheduled pool switching <span class="pro-tag">PRO</span></span>
+    </div>
+    <div class="pool-sched-list">${rows}</div>
+    ${profiles.length ? `
+    <div class="pool-sched-add">
+      <div class="pss-add-row">
+        <label class="pss-field"><span data-tip="Which saved pool profile to switch to. Manage profiles in the panel above.">profile</span>
+          <select id="pss-profile">${profileOpts}</select></label>
+        <label class="pss-field"><span data-tip="Local time of day to apply the switch, 24-hour.">time</span>
+          <input type="time" id="pss-time" value="23:00"></label>
+        <label class="pss-checkbox" data-tip="Restart the device after switching so the new pool connects immediately (recommended — pool changes only take effect on reconnect).">
+          <input type="checkbox" id="pss-restart" checked> restart after</label>
+      </div>
+      <div class="pss-add-row pss-days-row" data-tip="Days of the week this fires on (local time). Monday–Sunday.">
+        <span class="pss-days-label">days</span>
+        ${dayChecks}
+        <span class="pss-days-quick">
+          <button type="button" onclick="_pssSetDays([5,6])">weekends</button>
+          <button type="button" onclick="_pssSetDays([0,1,2,3,4])">weekdays</button>
+          <button type="button" onclick="_pssSetDays([0,1,2,3,4,5,6])">all</button>
+        </span>
+      </div>
+      <button type="button" class="primary" id="pss-add-btn" onclick="createSchedule()" data-tip="Create this schedule for the current device.">add schedule</button>
+    </div>` : `<div class="pool-sched-empty">Save a pool profile above first — schedules switch between saved profiles.</div>`}
+  `;
+}
+
+window._pssSetDays = (days) => {
+  const set = new Set(days);
+  document.querySelectorAll('.pss-day-cb').forEach(cb => {
+    cb.checked = set.has(parseInt(cb.value, 10));
+    cb.dataset.dirty = '1';  // keep the panel from being wiped mid-setup
+  });
+};
+
+window.createSchedule = async () => {
+  const profile_id = document.getElementById('pss-profile')?.value;
+  const time = document.getElementById('pss-time')?.value;
+  const restart = document.getElementById('pss-restart')?.checked;
+  const days = Array.from(document.querySelectorAll('.pss-day-cb'))
+    .filter(cb => cb.checked).map(cb => parseInt(cb.value, 10));
+  if (!profile_id) { toast('Pick a pool profile first', 'warn'); return; }
+  if (!time) { toast('Pick a time', 'warn'); return; }
+  if (!days.length) { toast('Pick at least one day', 'warn'); return; }
+  try {
+    await api('/api/pool-schedules', 'POST', { profile_id, time, days, restart, ips: [DEVICE_IP], enabled: true });
+    toast('Schedule added', 'info');
+    _clearDirty(document.getElementById('pool-schedules-panel'));
+    renderPoolSchedulesPanel();
+  } catch (e) {
+    if (e.code === 'pro_required') { toast('Pool scheduling requires Pro', 'error'); }
+    else { toast('Add failed: ' + e.message, 'error', 6000); }
+  }
+};
+
+window.toggleSchedule = async (id, enabled) => {
+  try {
+    await api(`/api/pool-schedules/${encodeURIComponent(id)}/update`, 'POST', { enabled });
+    toast(enabled ? 'Schedule enabled' : 'Schedule paused', 'info');
+    renderPoolSchedulesPanel();
+  } catch (e) {
+    if (e.code === 'pro_required') toast('Enabling a schedule requires Pro', 'error');
+    else toast('Update failed: ' + e.message, 'error');
+    renderPoolSchedulesPanel();  // revert the toggle to server truth
+  }
+};
+
+window.deleteSchedule = async (id) => {
+  if (!confirm('Delete this schedule?\n\nThis does NOT change the device\'s current pool — it just removes the automation.')) return;
+  try {
+    await api(`/api/pool-schedules/${encodeURIComponent(id)}/delete`, 'POST', {});
+    toast('Schedule deleted', 'info');
+    renderPoolSchedulesPanel();
+  } catch (e) { toast('Delete failed: ' + e.message, 'error'); }
+};
+
 window.applyPool = async () => {
   const form = document.getElementById('pool-form');
   if (!form) return;
@@ -1004,9 +1147,10 @@ async function poll() {
       if (ch) drawChart(ch, d.history, 'h', '#00ff9c');
       if (ct) drawTempChart(ct, d.history);
     }
-    // Pool profiles panel populates async (separate fetch) — fire-and-forget
-    // so the main render doesn't block on it.
+    // Pool profiles + schedules panels populate async (separate fetches) —
+    // fire-and-forget so the main render doesn't block on them.
     renderPoolProfilesPanel();
+    renderPoolSchedulesPanel();
     document.getElementById('last-update').textContent = new Date().toLocaleTimeString();
   } catch (e) {
     console.error(e);
