@@ -23,7 +23,7 @@ category: bitcoin
 # manifest fixes) can bump the patch component independently — the image
 # is pinned by digest, so the underlying app code stays the same. Next
 # aligned release across all platforms resets this.
-version: "1.19.0"
+version: "1.20.0"
 
 port: 13700
 description: >-
@@ -41,17 +41,19 @@ description: >-
 
   Free tier includes the full LAN dashboard, mDNS publishing, network
   scanner, recommendation engine, tuning controls, fan control, light/dark
-  theme, daily CSV logs, the solo block probability widget, the live share
-  feed, the local fleet leaderboard, and the public leaderboard at
+  theme, daily CSV logs, electricity-cost estimates (see what your fleet
+  costs to run per day/month), the solo block probability widget, the live
+  share feed, the local fleet leaderboard, and the public leaderboard at
   bitaxeballer.com/leaderboard (free to enter — top miner per Bitaxe model
   wins a free month of Pro every month).
 
 
   Pro tier ($29/year, optional) unlocks bulk tuning across selected
   devices, auto-tune frequency sweeps with hardware safety guardrails,
-  90 days of persistent local SQLite history, Discord webhook alerts,
-  and remote dashboard access from outside your LAN via the
-  relay.bitaxeballer.com WebSocket router.
+  scheduled pool switching (move your fleet to a solo/lottery pool on
+  nights and weekends, automatically), 90 days of persistent local SQLite
+  history, Discord webhook alerts, and remote dashboard access from outside
+  your LAN via the relay.bitaxeballer.com WebSocket router.
 
 developer: 465 Media
 website: https://bitaxeballer.com
@@ -67,6 +69,16 @@ gallery:
   - https://bitaxeballer.com/img/screenshots/scan.jpg
 
 releaseNotes: >-
+  v1.20.0 — See what mining costs you + schedule pool switches. (1) Electricity
+  cost estimates (free): set your kWh rate once and Baller turns every miner's
+  live power draw into an estimated cost per day and per month — a fleet total on
+  the home page, a running-cost line on each card, and a stat on every device
+  page. (2) Scheduled pool switching (Pro): built on saved pool profiles, apply a
+  profile to any device automatically at a set local time on set weekdays — e.g.
+  move your fleet to a solo/lottery pool at 11pm on weekends and back Monday
+  morning, hands-off. No cron to configure; managed from the device page.
+
+
   v1.19.0 — Braiins mini-miner monitoring + one-click log access. (1) Baller now
   monitors Braiins OS mini miners (BMM 101) alongside your Bitaxes and NerdQAxes —
   hashrate, chip temp, shares, best-share difficulty, uptime, and block finds, all
