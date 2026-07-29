@@ -86,12 +86,40 @@
     <div class="val"><span id="sum-eff">—</span><span class="unit">J/TH</span></div>
     <div class="sub">lower is better</div>
   </div>
+  <div class="cell cell-cost" id="sum-cost-cell" data-tip="Estimated electricity cost of the whole fleet per day, based on live power draw × your kWh rate. Click to set your rate. This is an estimate — actual wall draw is ~5–10% higher due to PSU losses.">
+    <div class="label">elec. cost / day</div>
+    <div class="val"><span id="sum-cost-cur" class="cost-cur"></span><span id="sum-cost">—</span></div>
+    <div class="sub"><span id="sum-cost-month">—</span>/mo · <button type="button" id="elec-rate-btn" class="cost-rate-link" data-tip="Set your electricity rate (per kWh) and currency symbol.">set rate</button></div>
+  </div>
   <div class="cell" data-tip="Devices currently reachable / total devices in your config. A device drops to offline after 3 consecutive failed polls (~15 seconds).">
     <div class="label">online</div>
     <div class="val"><span id="sum-online">0</span><span class="unit" id="sum-total">/0</span></div>
     <div class="sub">devices reachable</div>
   </div>
 </section>
+
+<!-- Electricity rate editor — a small inline popover opened from the cost tile
+     or its "set rate" link. Cost tracking is a free feature (no Pro gate). -->
+<div id="elec-modal" class="pro-modal" hidden>
+  <div class="pro-modal-backdrop" data-elec-close></div>
+  <div class="pro-modal-panel elec-modal-panel">
+    <button class="pro-modal-close" type="button" data-elec-close aria-label="Close">×</button>
+    <h2>⚡ electricity rate</h2>
+    <p class="elec-modal-sub">Used to estimate daily &amp; monthly running cost from each miner's live power draw. It's an estimate — set it to your real per-kWh rate for accuracy.</p>
+    <div class="elec-modal-grid">
+      <label data-tip="Your electricity price per kilowatt-hour, in whatever currency you use. Check a recent utility bill. Typical US residential is ~0.12–0.18.">
+        <span>rate / kWh</span>
+        <input type="number" id="elec-rate-input" min="0" max="100" step="0.001" placeholder="0.12">
+      </label>
+      <label data-tip="Currency symbol shown next to the cost (display only — no conversion is done).">
+        <span>currency</span>
+        <input type="text" id="elec-currency-input" maxlength="4" size="4" placeholder="$">
+      </label>
+      <button type="button" class="primary" id="elec-save-btn">save</button>
+    </div>
+    <div class="elec-modal-foot" id="elec-modal-foot" hidden></div>
+  </div>
+</div>
 
 <section class="fleet-block-eta" id="fleet-block-eta"></section>
 
@@ -261,7 +289,7 @@
 </details>
 
 <footer>
-  <div>Bitaxe Baller v1.19.0 · no warranty, use at your own risk{% if show_logs_link %} · <a href="#" class="footer-link" id="open-logs-link" data-tip="Opens the CSV telemetry folder in Finder/Explorer — one file per device per day, kept forever." data-tip-pos="top">logs folder</a>{% endif %}</div>
+  <div>Bitaxe Baller v1.20.0 · no warranty, use at your own risk{% if show_logs_link %} · <a href="#" class="footer-link" id="open-logs-link" data-tip="Opens the CSV telemetry folder in Finder/Explorer — one file per device per day, kept forever." data-tip-pos="top">logs folder</a>{% endif %}</div>
   <div class="credits">made with <span class="heart">♥</span> in NH, by <a href="https://465-media.com" target="_blank" rel="noopener">465-media.com</a></div>
   <div>last update <span id="last-update">—</span></div>
 </footer>
@@ -379,6 +407,11 @@ function renderCompactDevice(d) {
             <div class="l">shares/min</div><div class="v">${(sh.perMin ?? 0).toFixed(2)}</div>
           </div>
         </div>
+        ${d.cost ? `<div class="compact-cost" data-tip="Estimated electricity cost at this power draw and your kWh rate (${escapeHtml((d.cost.currency || '$'))}${d.cost.rate}/kWh). Set the rate on the home page's cost tile. Estimate only.">
+          <span class="cc-l">running cost</span>
+          <span class="cc-v">${escapeHtml(d.cost.currency || '$')}${(d.cost.perDay ?? 0).toFixed(2)}<span class="cc-u">/day</span></span>
+          <span class="cc-mo">${escapeHtml(d.cost.currency || '$')}${(d.cost.perMonth ?? 0).toFixed(2)}<span class="cc-u">/mo</span></span>
+        </div>` : ''}
         <div class="compact-shares" data-tip="Best-share difficulty: highest-difficulty share this miner has ever submitted ('all-time') vs since the device's last firmware reset ('session'). Best-share is a lottery metric — small miners can occasionally beat big ones on luck.">
           <span class="best-share-badge"><span class="bs-l">best</span><span class="bs-v">${formatDiff(m.bestDiff)}</span></span>
           <span class="best-share-badge session"><span class="bs-l">session</span><span class="bs-v">${formatDiff(m.bestSessionDiff)}</span></span>
@@ -414,6 +447,17 @@ function renderSummary(devices) {
   document.getElementById('sum-hashrate-alt-unit').textContent = inTh ? 'GH/s' : 'TH/s';
   document.getElementById('sum-power').textContent = totalPower.toFixed(1);
   document.getElementById('sum-eff').textContent = avgEff > 0 ? avgEff.toFixed(2) : '—';
+
+  // Fleet electricity cost — sum per-device perDay (server-computed from live
+  // power × the user's kWh rate). Currency symbol comes from any device's cost
+  // block so we don't need a separate fetch.
+  const withCost = online.filter(d => d.cost);
+  const costDay = withCost.reduce((s, d) => s + (d.cost.perDay || 0), 0);
+  const cur = withCost.length ? (withCost[0].cost.currency || '$') : '$';
+  document.getElementById('sum-cost-cur').textContent = cur;
+  document.getElementById('sum-cost').textContent = withCost.length ? costDay.toFixed(2) : '—';
+  document.getElementById('sum-cost-month').textContent = withCost.length ? cur + (costDay * 30).toFixed(2) : '—';
+
   document.getElementById('sum-online').textContent = online.length;
   document.getElementById('sum-total').textContent = '/' + devices.length;
   document.getElementById('device-count').textContent = devices.length;
@@ -768,9 +812,46 @@ document.addEventListener('click', async (e) => {
   }
 });
 
+// ----- Electricity rate editor (free feature) -----
+// Small modal to set the per-kWh rate + currency used for the cost estimates.
+function openElecModal() {
+  const modal = document.getElementById('elec-modal');
+  const foot = document.getElementById('elec-modal-foot');
+  foot.hidden = true; foot.textContent = '';
+  // Prefill from the server so the field shows what's actually saved.
+  api('/api/config/electricity').then(cfg => {
+    document.getElementById('elec-rate-input').value = cfg.rate ?? '';
+    document.getElementById('elec-currency-input').value = cfg.currency ?? '$';
+  }).catch(() => {});
+  modal.hidden = false;
+}
+function closeElecModal() { document.getElementById('elec-modal').hidden = true; }
+
+async function saveElecRate() {
+  const rate = parseFloat(document.getElementById('elec-rate-input').value);
+  const currency = (document.getElementById('elec-currency-input').value || '$').trim();
+  const foot = document.getElementById('elec-modal-foot');
+  if (!Number.isFinite(rate) || rate < 0) {
+    foot.hidden = false; foot.textContent = 'Enter a valid rate (0 or higher).';
+    return;
+  }
+  try {
+    await api('/api/config/electricity', 'POST', { rate, currency });
+    toast('Electricity rate saved', 'info');
+    closeElecModal();
+    if (typeof poll === 'function') poll();  // recompute cost tiles now
+  } catch (err) {
+    foot.hidden = false; foot.textContent = 'Save failed: ' + (err.message || err);
+  }
+}
+
 // Toolbar wiring (elements exist server-side, so we can bind on DOMContentLoaded).
 window.addEventListener('DOMContentLoaded', () => {
   refreshProState();
+  document.getElementById('elec-rate-btn')?.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); openElecModal(); });
+  document.getElementById('sum-cost-cell')?.addEventListener('click', openElecModal);
+  document.getElementById('elec-save-btn')?.addEventListener('click', saveElecRate);
+  document.querySelectorAll('[data-elec-close]').forEach(el => el.addEventListener('click', closeElecModal));
   document.getElementById('bulk-clear')?.addEventListener('click', clearBulkSelection);
   document.getElementById('bulk-select-all')?.addEventListener('click', selectAllOnline);
   document.querySelectorAll('.bulk-preset').forEach(btn => {

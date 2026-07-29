@@ -31,7 +31,7 @@ import relay_client
 # Info.plist/EXE version and the dashboard footer template should both
 # match this string. Update bump checklist: APP_VERSION here, the spec's
 # version="..." entries, and the v1.X.Y string in dashboard.html + device.html.
-APP_VERSION = "1.19.0"
+APP_VERSION = "1.20.0"
 
 
 # Test-mode override: pretend to be an older version so the auto-update flow
@@ -103,6 +103,15 @@ DEFAULT_POLL = 5
 HISTORY_POINTS = 720  # 1 hour at 5s
 ROLLING_WINDOWS = {"1m": 12, "5m": 60, "15m": 180, "1h": 720}
 
+# Electricity cost estimation. Rate is per-kWh in the user's local currency; the
+# currency is a display symbol only (we don't convert). Defaults to a ballpark
+# US residential rate so the estimate is useful out of the box — the tooltip and
+# settings panel make clear it's an estimate the user should set to their real
+# rate. Cost is a free feature (a lead-in that makes "what is this costing me?"
+# answerable without Pro).
+DEFAULT_ELEC_RATE = 0.12       # $/kWh — sensible default, user-editable
+DEFAULT_CURRENCY = "$"
+
 # ----- Pro license server -----
 # Self-hosted license server at bitaxeballer.com/api/license — same JSON
 # response shape as the legacy Lemon Squeezy license API (we built the new
@@ -146,7 +155,43 @@ poll_stop_flag = threading.Event()
 
 
 def default_config():
-    return {"devices": [], "poll_interval": DEFAULT_POLL}
+    return {
+        "devices": [],
+        "poll_interval": DEFAULT_POLL,
+        "electricity": {"rate": DEFAULT_ELEC_RATE, "currency": DEFAULT_CURRENCY},
+    }
+
+
+def _electricity_cfg():
+    """Read the electricity rate + currency, tolerating configs written before
+    this key existed (and bad hand-edits). Returns (rate: float, currency: str).
+    A non-positive or non-numeric rate falls back to the default so we never
+    show a nonsensical $0.00/day for every device."""
+    with config_lock:
+        raw = (load_config().get("electricity") or {})
+    try:
+        rate = float(raw.get("rate", DEFAULT_ELEC_RATE))
+    except (TypeError, ValueError):
+        rate = DEFAULT_ELEC_RATE
+    if rate < 0:
+        rate = DEFAULT_ELEC_RATE
+    currency = str(raw.get("currency") or DEFAULT_CURRENCY)[:4]
+    return rate, currency
+
+
+def _cost_block(power_w, rate, currency):
+    """Estimated running cost for a device drawing `power_w` watts continuously.
+    perDay = kW × 24h × rate; perMonth uses a 30-day month. Returns rate +
+    currency alongside so the frontend can render without a second fetch and the
+    fleet total can sum perDay across devices."""
+    kwh_per_day = (power_w or 0) / 1000.0 * 24.0
+    per_day = kwh_per_day * rate
+    return {
+        "perDay": round(per_day, 2),
+        "perMonth": round(per_day * 30, 2),
+        "rate": rate,
+        "currency": currency,
+    }
 
 
 def load_config():
@@ -278,6 +323,14 @@ def fetch_braiins(ip, timeout=3):
         # BOSer reports the live stratum difficulty; surface it like AxeOS's poolDifficulty.
         "poolDifficulty": pools.get("Stratum Difficulty", 0) or pools.get("Work Difficulty", 0) or 0,
     }
+
+
+def _is_monitor_only(ip) -> bool:
+    """True when `ip` is a monitor-only device (Braiins OS) we must never send
+    mutating AxeOS calls to. Boolean sibling of _monitor_only_error for use
+    outside request handlers (e.g. the scheduler)."""
+    with state_lock:
+        return (state.get(ip) or {}).get("device_type", "axeos") == "braiins"
 
 
 def _monitor_only_error(ip):
@@ -472,10 +525,13 @@ def poll_one(ip, label, device_type=None):
 
         # Advance auto-tune state machine if a sweep is running. Done under
         # state_lock to keep mutations consistent with the poll write above.
+        # Resolve the electricity rate before taking state_lock so device_summary
+        # never nests config_lock inside state_lock.
+        elec = _electricity_cfg()
         with state_lock:
             if ip in state:
                 _autotune_tick(ip, state[ip])
-                summary_for_alerts = device_summary(state[ip])
+                summary_for_alerts = device_summary(state[ip], elec=elec)
                 new_best_this_tick = bool(s["share_events"]) and s["share_events"][0].get("type") == "new_best" and s["share_events"][0].get("t") == ts
         # Alerts check uses the public summary (so the same shape the UI sees).
         # Done outside the state_lock since it does HTTP to Discord webhooks
@@ -488,6 +544,7 @@ def poll_one(ip, label, device_type=None):
         except Exception:
             pass
     except Exception as e:
+        elec = _electricity_cfg()  # resolve before state_lock (see note above)
         with state_lock:
             if ip not in state:
                 return
@@ -497,7 +554,7 @@ def poll_one(ip, label, device_type=None):
             s["last_error"] = str(e)[:100]
             if s["consecutive_errors"] >= 3:
                 s["online"] = False
-            offline_summary = device_summary(s)
+            offline_summary = device_summary(s, elec=elec)
         if was_online and state.get(ip, {}).get("consecutive_errors", 0) == 3:
             log_event(ip, f"Device went offline: {str(e)[:60]}")
         # Alerts also need to fire on offline. The offline-rule logic in
@@ -523,6 +580,12 @@ def poll_loop():
                         pass
             # No-op unless 24h have elapsed since the last sweep.
             _history_sweep_retention()
+            # Fire any due scheduled pool switches. Cheap no-op unless a schedule
+            # matches the current minute (and Pro is active).
+            try:
+                _run_pool_schedules()
+            except Exception:
+                pass
             elapsed = time.time() - t0
             time.sleep(max(0.5, interval - elapsed))
         else:
@@ -1059,7 +1122,7 @@ def _solo_block_payload(stratum_url, stratum_port, hashrate_ghs, best_diff_str, 
     }
 
 
-def device_summary(s):
+def device_summary(s, elec=None):
     if not s["latest"]:
         # Device has never been polled successfully (`latest` stays populated
         # after a device goes offline, so this branch only fires for fresh
@@ -1095,6 +1158,12 @@ def device_summary(s):
     ghs = latest.get("hashRate", 0)
     power = latest.get("power", 0)
     j_per_th = (power / (ghs / 1000)) if ghs > 0 else 0
+
+    # Estimated electricity cost. Resolve the rate once per /api/devices call
+    # (passed in by the caller) so a big fleet doesn't re-read config.json per
+    # device; fall back to a fresh read for the single-device endpoint.
+    elec_rate, elec_currency = elec if elec is not None else _electricity_cfg()
+    cost = _cost_block(power, elec_rate, elec_currency)
 
     # Expected hashrate. Three sources, in priority order:
     #   1. firmware-reported `expectedHashrate` — chip-aware, matches AxeOS
@@ -1177,6 +1246,7 @@ def device_summary(s):
             "expectedGhs": round(expected_ghs, 1),
             "actualPctOfExpected": round((ghs / expected_ghs * 100) if expected_ghs > 0 else 0, 1),
         },
+        "cost": cost,
         "hwErrors": {
             "shares": shares_delta,
             "hwErrors": hw_delta,
@@ -1920,8 +1990,9 @@ def _enrich_fleet_outliers(summaries):
 
 @app.route("/api/devices")
 def api_devices():
+    elec = _electricity_cfg()  # resolve once, not per device
     with state_lock:
-        summaries = [device_summary(s) for s in state.values()]
+        summaries = [device_summary(s, elec=elec) for s in state.values()]
     return jsonify(_enrich_fleet_outliers(summaries))
 
 
@@ -2065,6 +2136,34 @@ def api_device_history(ip):
 @app.route("/api/config", methods=["GET"])
 def api_config_get():
     return jsonify(load_config())
+
+
+@app.route("/api/config/electricity", methods=["GET"])
+def api_electricity_get():
+    """Current electricity rate + currency for the cost estimator. Free feature —
+    no Pro gate."""
+    rate, currency = _electricity_cfg()
+    return jsonify({"rate": rate, "currency": currency})
+
+
+@app.route("/api/config/electricity", methods=["POST"])
+def api_electricity_set():
+    """Set the per-kWh rate and currency symbol used for cost estimates. Body:
+    {rate, currency}. Rate is clamped to a sane range; currency is a short
+    display symbol only (we don't convert between currencies)."""
+    body = request.get_json(force=True) or {}
+    try:
+        rate = float(body.get("rate"))
+    except (TypeError, ValueError):
+        return jsonify({"error": "rate must be a number"}), 400
+    if not (0 <= rate <= 100):
+        return jsonify({"error": "rate must be between 0 and 100 per kWh"}), 400
+    currency = str(body.get("currency") or DEFAULT_CURRENCY).strip()[:4] or DEFAULT_CURRENCY
+    with config_lock:
+        cfg = load_config()
+        cfg["electricity"] = {"rate": round(rate, 4), "currency": currency}
+        save_config(cfg)
+    return jsonify({"ok": True, "rate": round(rate, 4), "currency": currency})
 
 
 @app.route("/api/logs/open", methods=["POST"])
@@ -4610,6 +4709,212 @@ def api_pool_profiles_apply(pid):
             return jsonify({"ok": True, "applied_profile_id": pid, "restartError": str(e)[:120]}), 200
 
     return jsonify({"ok": True, "applied_profile_id": pid, "restarted": restarted})
+
+
+# ----- Pool schedules (Pro): time-of-day + weekday pool switching -----
+# A schedule applies a saved pool profile to one or more devices at a chosen
+# local time on chosen weekdays — e.g. "23:00 Sat & Sun → solo-lottery pool".
+# Built on the existing pool-profiles feature (a schedule references a profile
+# id, it doesn't store pool fields itself). Evaluated inside poll_loop; no cron
+# dependency. Weekdays use Python's convention: Monday=0 … Sunday=6.
+#
+# Missed-fire semantics: a schedule fires when the app is running during its
+# target minute. If the machine is asleep/off at that minute, that day's switch
+# is skipped (no catch-up) — the once-per-day guard is a date string, not a
+# backlog. This is the honest behavior for a desktop app and is documented in
+# the UI tooltip.
+
+SCHEDULE_DIRTY_LOCK = threading.Lock()
+
+
+def _load_pool_schedules():
+    with config_lock:
+        cfg = load_config()
+    return list(cfg.get("pool_schedules") or [])
+
+
+def _save_pool_schedules(schedules):
+    with config_lock:
+        cfg = load_config()
+        cfg["pool_schedules"] = schedules
+        save_config(cfg)
+
+
+def _new_schedule_id() -> str:
+    return base64.urlsafe_b64encode(os.urandom(5)).decode("ascii").rstrip("=")[:6]
+
+
+def _validate_schedule_payload(body: dict):
+    """Normalize + validate an incoming schedule. Returns (fields, error). On
+    success error is None; on failure fields is None and error is a message."""
+    profile_id = str(body.get("profile_id") or "").strip()
+    if not profile_id:
+        return None, "profile_id required"
+    if not any(p.get("id") == profile_id for p in _load_pool_profiles()):
+        return None, "unknown profile_id"
+
+    t = str(body.get("time") or "").strip()
+    try:
+        hh, mm = t.split(":")
+        hh, mm = int(hh), int(mm)
+        if not (0 <= hh <= 23 and 0 <= mm <= 59):
+            raise ValueError
+        t = f"{hh:02d}:{mm:02d}"
+    except (ValueError, AttributeError):
+        return None, "time must be HH:MM (24-hour)"
+
+    raw_days = body.get("days")
+    if not isinstance(raw_days, list) or not raw_days:
+        return None, "days must be a non-empty list of 0-6 (Mon=0)"
+    days = sorted({int(d) for d in raw_days if isinstance(d, (int, float)) and 0 <= int(d) <= 6})
+    if not days:
+        return None, "days must contain integers 0-6 (Mon=0)"
+
+    known_ips = {d["ip"] for d in (load_config().get("devices") or [])}
+    raw_ips = body.get("ips")
+    if not isinstance(raw_ips, list) or not raw_ips:
+        return None, "ips must be a non-empty list of tracked device IPs"
+    ips = [str(ip).strip() for ip in raw_ips if str(ip).strip() in known_ips]
+    if not ips:
+        return None, "none of the given ips are tracked devices"
+
+    return {
+        "profile_id": profile_id,
+        "time": t,
+        "days": days,
+        "ips": ips,
+        "restart": bool(body.get("restart", True)),
+        "enabled": bool(body.get("enabled", True)),
+    }, None
+
+
+@app.route("/api/pool-schedules", methods=["GET"])
+def api_pool_schedules_list():
+    return jsonify({"schedules": _load_pool_schedules(), "pro_active": is_pro_active()})
+
+
+@app.route("/api/pool-schedules", methods=["POST"])
+def api_pool_schedules_create():
+    if not is_pro_active():
+        return jsonify({"error": "Pool scheduling is a Pro feature.", "code": "pro_required"}), 402
+    body = request.get_json(force=True) or {}
+    fields, err = _validate_schedule_payload(body)
+    if err:
+        return jsonify({"error": err}), 400
+    label = str(body.get("label") or "").strip()[:60]
+    schedules = _load_pool_schedules()
+    schedule = {
+        "id": _new_schedule_id(),
+        "label": label,
+        "created_at": int(time.time()),
+        "last_run": "",
+        **fields,
+    }
+    schedules.append(schedule)
+    _save_pool_schedules(schedules)
+    return jsonify({"ok": True, "schedule": schedule})
+
+
+@app.route("/api/pool-schedules/<sid>/update", methods=["POST"])
+def api_pool_schedules_update(sid):
+    """Edit a schedule, or just flip `enabled`. Enabling requires Pro (it
+    activates a Pro feature); disabling/deleting is always allowed so a lapsed
+    user can turn things off."""
+    body = request.get_json(force=True) or {}
+    schedules = _load_pool_schedules()
+    sch = next((s for s in schedules if s.get("id") == sid), None)
+    if not sch:
+        return jsonify({"error": "schedule not found"}), 404
+
+    # Enable-only fast path (the toggle switch in the UI).
+    if set(body.keys()) <= {"enabled"} and "enabled" in body:
+        want = bool(body["enabled"])
+        if want and not is_pro_active():
+            return jsonify({"error": "Pool scheduling is a Pro feature.", "code": "pro_required"}), 402
+        sch["enabled"] = want
+        if not want:
+            sch["last_run"] = ""  # so re-enabling can fire again today
+        _save_pool_schedules(schedules)
+        return jsonify({"ok": True, "schedule": sch})
+
+    # Full edit requires Pro.
+    if not is_pro_active():
+        return jsonify({"error": "Pool scheduling is a Pro feature.", "code": "pro_required"}), 402
+    fields, err = _validate_schedule_payload(body)
+    if err:
+        return jsonify({"error": err}), 400
+    sch.update(fields)
+    sch["label"] = str(body.get("label") or sch.get("label") or "").strip()[:60]
+    sch["last_run"] = ""  # settings changed — allow it to fire again today
+    _save_pool_schedules(schedules)
+    return jsonify({"ok": True, "schedule": sch})
+
+
+@app.route("/api/pool-schedules/<sid>/delete", methods=["POST"])
+def api_pool_schedules_delete(sid):
+    schedules = _load_pool_schedules()
+    remaining = [s for s in schedules if s.get("id") != sid]
+    if len(remaining) == len(schedules):
+        return jsonify({"error": "schedule not found"}), 404
+    _save_pool_schedules(remaining)
+    return jsonify({"ok": True})
+
+
+def _run_pool_schedules():
+    """Fire any due pool schedules. Called once per poll cycle. Cheap in the
+    common case (no schedules, or no minute match). Fails safe: if Pro isn't
+    active the schedules simply don't run (config is retained)."""
+    if not is_pro_active():
+        return
+    if not _load_pool_schedules():  # fast path — skip the lock when nothing is scheduled
+        return
+    now = datetime.now()
+    today = now.strftime("%Y-%m-%d")
+    hhmm = now.strftime("%H:%M")
+    weekday = now.weekday()  # Mon=0 … Sun=6
+
+    # Serialize evaluation so a slow apply (network I/O) can't overlap a second
+    # invocation and double-fire the same schedule.
+    with SCHEDULE_DIRTY_LOCK:
+        schedules = _load_pool_schedules()  # re-read inside the lock
+        profiles = {p["id"]: p for p in _load_pool_profiles()}
+        dirty = False
+        for sch in schedules:
+            if not sch.get("enabled"):
+                continue
+            if weekday not in (sch.get("days") or []):
+                continue
+            if sch.get("time") != hhmm:
+                continue
+            if sch.get("last_run") == today:
+                continue
+
+            prof = profiles.get(sch.get("profile_id"))
+            if not prof:
+                # Profile was deleted out from under the schedule. Burn today's
+                # slot so we don't retry every 5s, and move on.
+                sch["last_run"] = today
+                dirty = True
+                continue
+
+            settings = {k: v for k, v in prof.items() if k in POOL_PROFILE_FIELDS}
+            for ip in (sch.get("ips") or []):
+                if _is_monitor_only(ip):
+                    log_event(ip, f"Scheduled pool switch skipped — monitor-only device")
+                    continue
+                try:
+                    patch_device(ip, settings)
+                    log_event(ip, f"Scheduled pool switch → '{prof.get('name', '?')}' at {sch.get('time')}")
+                    if sch.get("restart"):
+                        restart_device(ip)
+                        log_event(ip, "Restart sent (scheduled pool switch)")
+                except Exception as e:
+                    log_event(ip, f"Scheduled pool switch failed: {str(e)[:80]}")
+            sch["last_run"] = today
+            dirty = True
+
+        if dirty:
+            _save_pool_schedules(schedules)
 
 
 @app.route("/api/devices/reset_session", methods=["POST"])
