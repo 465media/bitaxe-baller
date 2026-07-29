@@ -1100,6 +1100,25 @@ def _block_probability_math(hashrate_ghs, network_diff, best_diff_value):
         "proximity":    round(proximity, 4),
     }
 
+# Chains whose only free difficulty source is NOT the algo a Bitaxe actually
+# mines, so solo-block odds derived from it would be badly misleading.
+# DigiByte is multi-algo (Scrypt / SHA-256 / Qubit / Skein / Odocrypt) and
+# chainz's `getdifficulty` returns an aggregate / last-block value — not the
+# SHA-256 diff the Bitaxe competes against. Using it makes a ~6 TH/s miner look
+# like it should solve a block every few minutes (real answer: weeks–months).
+# Until a free SHA-256-specific DGB difficulty source is wired in, we still show
+# the chain + reward, but suppress the (wrong) odds rather than mislead.
+# See _fetch_dgb_stats and _block_probability_math.
+_ODDS_UNRELIABLE_CHAINS = {"dgb"}
+
+_ODDS_UNRELIABLE_NOTE = (
+    "DigiByte is multi-algorithm — SHA-256 is one of its five algorithms. A free "
+    "SHA-256-specific network-difficulty source isn't available yet, so solo-block "
+    "odds computed from the aggregate difficulty would be wildly optimistic and are "
+    "hidden. Your miners are working normally; this only affects the odds display."
+)
+
+
 def _solo_block_payload(stratum_url, stratum_port, hashrate_ghs, best_diff_str, stratum_user="", chain=None):
     """Top-level builder for the device_summary 'blockProbability' field. None if unavailable.
     `chain` pins the chain (manual override); falls back to auto-detection when None."""
@@ -1110,16 +1129,27 @@ def _solo_block_payload(stratum_url, stratum_port, hashrate_ghs, best_diff_str, 
     prob = _block_probability_math(hashrate_ghs, stats["difficulty"], _parse_diff(best_diff_str))
     if not prob:
         return None
-    return {
-        "chain":       stats["chain"],
-        "chainName":   stats["name"],
-        "symbol":      stats["symbol"],
-        "difficulty":  stats["difficulty"],
-        "reward":      stats["reward"],
-        "priceUsd":    stats["priceUsd"],
-        "rewardUsd":   round(stats["reward"] * stats["priceUsd"], 2),
-        **prob,
+    reliable = chain_id not in _ODDS_UNRELIABLE_CHAINS
+    payload = {
+        "chain":        stats["chain"],
+        "chainName":    stats["name"],
+        "symbol":       stats["symbol"],
+        "difficulty":   stats["difficulty"],
+        "reward":       stats["reward"],
+        "priceUsd":     stats["priceUsd"],
+        "rewardUsd":    round(stats["reward"] * stats["priceUsd"], 2),
+        "oddsReliable": reliable,
     }
+    if reliable:
+        payload.update(prob)
+    else:
+        # Suppress the derived odds/ETA/proximity — every one of them is a
+        # function of the wrong (aggregate) difficulty. Keep the fields present
+        # (as None) so older frontends don't blow up on missing keys.
+        payload.update({"dailyOneIn": None, "monthlyOneIn": None,
+                        "yearlyOneIn": None, "proximity": None,
+                        "oddsNote": _ODDS_UNRELIABLE_NOTE})
+    return payload
 
 
 def device_summary(s, elec=None):
