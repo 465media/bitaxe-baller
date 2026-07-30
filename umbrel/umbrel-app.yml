@@ -23,7 +23,7 @@ category: bitcoin
 # manifest fixes) can bump the patch component independently — the image
 # is pinned by digest, so the underlying app code stays the same. Next
 # aligned release across all platforms resets this.
-version: "1.20.0"
+version: "1.20.1"
 
 port: 13700
 description: >-
@@ -69,6 +69,14 @@ gallery:
   - https://bitaxeballer.com/img/screenshots/scan.jpg
 
 releaseNotes: >-
+  v1.20.1 — Fix: DigiByte solo-block odds. DigiByte is multi-algorithm and only
+  SHA-256 is what your Bitaxe mines; we were using DGB's aggregate network
+  difficulty, which made the solo-block odds look far too optimistic. Those odds
+  are now hidden for DigiByte (with a short explanation) until we can show the
+  accurate SHA-256 figure. Your miners were always working normally — this was a
+  display-only fix. Bitcoin and the other single-algorithm chains are unaffected.
+
+
   v1.20.0 — See what mining costs you + schedule pool switches. (1) Electricity
   cost estimates (free): set your kWh rate once and Baller turns every miner's
   live power draw into an estimated cost per day and per month — a fleet total on

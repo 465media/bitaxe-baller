@@ -98,7 +98,7 @@
 </section>
 
 <footer>
-  <div>Bitaxe Baller v1.20.0 · no warranty, use at your own risk{% if show_logs_link %} · <a href="#" class="footer-link" id="open-logs-link" data-tip="Opens the CSV telemetry folder in Finder/Explorer — one file per device per day, kept forever." data-tip-pos="top">logs folder</a>{% endif %}</div>
+  <div>Bitaxe Baller v1.20.1 · no warranty, use at your own risk{% if show_logs_link %} · <a href="#" class="footer-link" id="open-logs-link" data-tip="Opens the CSV telemetry folder in Finder/Explorer — one file per device per day, kept forever." data-tip-pos="top">logs folder</a>{% endif %}</div>
   <div class="credits">made with <span class="heart">♥</span> in NH, by <a href="https://465-media.com" target="_blank" rel="noopener">465-media.com</a></div>
   <div>last update <span id="last-update">—</span></div>
 </footer>
@@ -161,14 +161,13 @@ function blockProbPanel(d) {
   const chainTip = `Network difficulty + ${bp.symbol} price refresh every 10 minutes from free public APIs (mempool.space for BTC, blockchair for BCH). Reward is the post-2024-halving block subsidy.`;
   const proximityTip = `Log-scaled position of your best-ever share difficulty relative to the network's current difficulty. 100% means your best share equals the network target — you found a block. The bar moves linearly across orders of magnitude, so a small visible shift = a 10× harder share.`;
   const oddsTip = `Pure math at your current hashrate vs the network difficulty. These are average odds — actual time-to-block is wildly variable. Solo mining is a lottery; this is the ticket count.`;
-  return `
-    <div class="detail-section block-prob">
-      <h2 data-tip="${chainTip}">solo block probability · ${escapeHtml(bp.chainName)}</h2>
-      <div class="bp-meta">
-        diff <span class="bp-diff">${formatDiff(bp.difficulty)}</span>
-        · reward <span class="bp-reward">${bp.reward} ${escapeHtml(bp.symbol)}</span>
-        / <span class="bp-usd">$${rewardUsd}</span>
-      </div>
+
+  // For multi-algo chains (DigiByte) we can't get the SHA-256-specific network
+  // difficulty from a free source, so the odds/proximity would be misleading —
+  // show the chain + reward, but an honest note in place of the numbers.
+  const oddsBody = bp.oddsReliable === false
+    ? `<div class="bp-note" data-tip="${escapeHtml(oddsTip)}">${escapeHtml(bp.oddsNote || 'Solo-block odds are unavailable for this chain.')}</div>`
+    : `
       <div class="bp-grid" data-tip="${oddsTip}">
         <div class="bp-cell"><div class="bp-l">daily</div><div class="bp-v">1 in ${_bpFmtOneIn(bp.dailyOneIn)}</div></div>
         <div class="bp-cell"><div class="bp-l">monthly</div><div class="bp-v">1 in ${_bpFmtOneIn(bp.monthlyOneIn)}</div></div>
@@ -179,7 +178,16 @@ function blockProbPanel(d) {
         <div class="bp-bar">
           <div class="bp-bar-marker" style="left: ${proximityPct.toFixed(2)}%"></div>
         </div>
+      </div>`;
+  return `
+    <div class="detail-section block-prob">
+      <h2 data-tip="${chainTip}">solo block probability · ${escapeHtml(bp.chainName)}</h2>
+      <div class="bp-meta">
+        diff <span class="bp-diff">${formatDiff(bp.difficulty)}</span>
+        · reward <span class="bp-reward">${bp.reward} ${escapeHtml(bp.symbol)}</span>
+        / <span class="bp-usd">$${rewardUsd}</span>
       </div>
+      ${oddsBody}
     </div>
   `;
 }

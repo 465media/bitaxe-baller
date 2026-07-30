@@ -289,7 +289,7 @@
 </details>
 
 <footer>
-  <div>Bitaxe Baller v1.20.0 · no warranty, use at your own risk{% if show_logs_link %} · <a href="#" class="footer-link" id="open-logs-link" data-tip="Opens the CSV telemetry folder in Finder/Explorer — one file per device per day, kept forever." data-tip-pos="top">logs folder</a>{% endif %}</div>
+  <div>Bitaxe Baller v1.20.1 · no warranty, use at your own risk{% if show_logs_link %} · <a href="#" class="footer-link" id="open-logs-link" data-tip="Opens the CSV telemetry folder in Finder/Explorer — one file per device per day, kept forever." data-tip-pos="top">logs folder</a>{% endif %}</div>
   <div class="credits">made with <span class="heart">♥</span> in NH, by <a href="https://465-media.com" target="_blank" rel="noopener">465-media.com</a></div>
   <div>last update <span id="last-update">—</span></div>
 </footer>
@@ -489,6 +489,10 @@ function renderFleetBlockEta(devices) {
         symbol: bp.symbol,
         difficulty: bp.difficulty,
         rewardUsd: bp.rewardUsd,
+        // Multi-algo chains (DGB) can't get a SHA-256-specific difficulty, so
+        // their solo odds are unreliable — flagged by the server. Default true
+        // for older payloads that predate the flag.
+        oddsReliable: bp.oddsReliable !== false,
         ghs: 0,
         deviceCount: 0,
       };
@@ -505,6 +509,21 @@ function renderFleetBlockEta(devices) {
   chains.sort((a, b) => (a.chain === 'btc' ? -1 : b.chain === 'btc' ? 1 : a.chain.localeCompare(b.chain)));
 
   const tiles = chains.map(c => {
+    // Multi-algo chains (DGB): we don't have a SHA-256-specific difficulty, so
+    // an ETA/odds here would badly mislead. Show hashrate + an honest note.
+    if (c.oddsReliable === false) {
+      const inTh = getHashrateUnit() === 'TH';
+      const hashText = inTh ? (c.ghs / 1000).toFixed(2) + ' TH/s' : c.ghs.toFixed(0) + ' GH/s';
+      const noun = c.deviceCount === 1 ? 'device' : 'devices';
+      const tip = `${c.chainName} is multi-algorithm (SHA-256 is one of several). A free SHA-256-specific difficulty source isn't available yet, so solo-block odds would be misleading and are hidden. Your miners are working normally.`;
+      return `
+        <div class="eta-tile eta-tile-na" data-chain="${c.chain}" data-tip="${escapeHtml(tip)}">
+          <div class="eta-chain">${escapeHtml(c.chainName)} fleet</div>
+          <div class="eta-row"><span class="eta-label">solo odds N/A · multi-algo chain</span></div>
+          <div class="eta-sub">${c.deviceCount} ${noun} · ${hashText}</div>
+        </div>
+      `;
+    }
     // per-second block probability: GH/s × 1e9 ÷ (2³² × network difficulty).
     // Equivalent to summing each device's per-second rate. Math holds because
     // share difficulty is linear in hashrate at constant network difficulty.

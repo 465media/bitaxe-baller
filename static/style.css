@@ -2558,6 +2558,18 @@
     color: var(--fg);
     font-family: var(--mono, ui-monospace, 'JetBrains Mono', monospace);
   }
+  /* Honest note shown in place of the odds grid for multi-algo chains (DGB)
+     where a SHA-256-specific difficulty isn't available. */
+  .detail-section.block-prob .bp-note {
+    color: var(--dim);
+    font-size: 12.5px;
+    line-height: 1.55;
+    border: 1px dashed var(--border);
+    border-radius: 6px;
+    padding: 10px 12px;
+    background: var(--bg-2);
+  }
+  .eta-tile.eta-tile-na .eta-label { color: var(--dim); font-size: 12px; }
   .detail-section.block-prob .bp-grid {
     display: grid;
     grid-template-columns: repeat(3, 1fr);
