@@ -151,7 +151,7 @@ if [[ -f build/.update-signing-key || -n "${UPDATE_SIGNING_KEY:-}" ]]; then
     --mac-dmg "$DMG_PATH" \
     --release-notes-url "$RELEASE_NOTES_URL" \
     --out dist/appcast.xml
-  echo "==> appcast at dist/appcast.xml — upload to https://bitaxeballer.com/appcast.xml after release"
+  echo "==> appcast at dist/appcast.xml — 'bash build/release-mac.sh vX.Y.Z' merges + uploads it to the GitHub release (the feed the app actually polls: /releases/latest/download/appcast.xml)"
 else
   echo
   echo "[!] No auto-update signing key found at build/.update-signing-key."
