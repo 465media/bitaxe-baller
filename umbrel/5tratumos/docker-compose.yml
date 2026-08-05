@@ -1,0 +1,53 @@
+# Bitaxe Baller — 5tratumOS compose template (BRIDGE networking).
+#
+# Why a separate file from ../docker-compose.yml
+# ----------------------------------------------
+# Our main Umbrel recipe runs the app on `network_mode: host` and points the
+# app_proxy at `host.docker.internal:13701` via `host-gateway`. That's needed on
+# stock Umbrel for the LAN scanner + mDNS, but it depends on the proxy being able
+# to resolve `host.docker.internal` — and on 5tratumOS that wiring blank-pages
+# (the proxy can't reach the app). 5tratumOS's own apps (e.g. willitmod-axelive)
+# use plain BRIDGE networking with the proxy talking to the service container over
+# Docker DNS. This file mirrors that proven pattern, so the tile loads.
+#
+# Trade-off of bridge mode (documented in README.md):
+#   * app_proxy → app works reliably (no blank page)  ✅
+#   * add-miner-by-IP works (outbound NAT to the LAN)  ✅
+#   * monitoring / tuning / leaderboard all work       ✅
+#   * mDNS `.local` publish does NOT work (bridge has no multicast) → disabled
+#   * the LAN auto-scanner can't see the host's subnet from a bridge IP, so we
+#     hand it the subnet explicitly via BBR_SCAN_SUBNET (EDIT it to your LAN).
+#
+# app_proxy APP_HOST = "<app-id>_<service>_1". App id is `bitaxeballer-app` and
+# the service below is `web`, so the container DNS name is `bitaxeballer-app_web_1`.
+
+version: "3.7"
+
+services:
+  app_proxy:
+    environment:
+      APP_HOST: bitaxeballer-app_web_1
+      APP_PORT: 13701
+      # Gate the tile URL behind the 5tratumOS/Umbrel login — the dashboard has
+      # no auth of its own and every tune/pool/restart endpoint mutates state.
+      PROXY_AUTH_ADD: "true"
+
+  web:
+    image: ghcr.io/465media/bitaxe-baller:latest@sha256:61112864b24b6d09a468e0cda4e9c2bab97a74dbb7ce2e2b19cf34828116df66
+    restart: on-failure
+    stop_grace_period: 15s
+    init: true
+    environment:
+      BITAXE_BALLER_DATA_DIR: /data
+      HOST: 0.0.0.0
+      PORT: 13701
+      # Bridge networking can't carry multicast, so mDNS would just log errors.
+      MDNS_ENABLED: 0
+      BITAXE_BALLER_NO_AUTO_OPEN: 1
+      # >>> EDIT THIS to your real LAN /24 so the network scanner works from a
+      # bridged container. Example: your miners are on 192.168.1.x → keep as-is;
+      # on 10.0.0.x → set "10.0.0.0/24". You can always add miners by IP without
+      # it, but the scanner needs to know which subnet to probe.
+      BBR_SCAN_SUBNET: "192.168.1.0/24"
+    volumes:
+      - ${APP_DATA_DIR}/data:/data

@@ -1,0 +1,60 @@
+# Bitaxe Baller — app manifest, 5tratumOS / bridge-networking variant.
+#
+# Same app identity as our stock Umbrel recipe (../umbrel-app.yml): id
+# `bitaxeballer-app`, so it slots into a community store with store id
+# "bitaxeballer" (github.com/465media/umbrel-bitaxe-baller-store). The ONLY
+# difference from the stock recipe is the paired docker-compose.yml, which uses
+# bridge networking so the app-proxy on 5tratumOS can reach the app (host mode
+# blank-pages there — see README.md). Keep the version + copy in sync with
+# ../umbrel-app.yml on each release.
+
+manifestVersion: 1
+id: bitaxeballer-app
+disabled: false
+name: Bitaxe Baller
+tagline: Live dashboard + tuner for your fleet of Bitaxe Bitcoin miners
+icon: https://bitaxeballer.com/img/icon-dark.svg
+category: bitcoin
+version: "1.20.1"
+port: 13700
+description: >-
+  Bitaxe Baller is the dashboard + tuner that hobbyist Bitaxe miners actually
+  want. Polls each miner every 5 seconds, surfaces one-click tuning
+  recommendations, charts hashrate and temperatures over time, monitors
+  NerdQAxe and Braiins mini-miners alongside your Bitaxes, and writes per-device
+  CSV logs.
+
+
+  This is the 5tratumOS build: it runs on bridge networking so the app tile
+  loads correctly behind the 5tratumOS app-proxy. Add miners by IP, or set your
+  LAN subnet in the compose (BBR_SCAN_SUBNET) to use the network scanner. mDNS
+  `.local` publishing is disabled under bridge networking — reach the dashboard
+  from the 5tratumOS home screen tile.
+
+
+  Free tier includes the full LAN dashboard, network scanner, recommendation
+  engine, tuning controls, fan control, daily CSV logs, electricity-cost
+  estimates, the solo block probability widget, the live share feed, and the
+  public leaderboard at bitaxeballer.com/leaderboard. Pro ($29/year) unlocks
+  bulk tuning, auto-tune sweeps, scheduled pool switching, 90 days of SQLite
+  history, Discord alerts, and remote access via relay.bitaxeballer.com.
+
+developer: 465 Media
+website: https://bitaxeballer.com
+dependencies: []
+repo: https://github.com/465media/bitaxe-baller
+support: https://bitaxeballer.com/support.html
+gallery:
+  - https://bitaxeballer.com/img/screenshots/home.jpg
+  - https://bitaxeballer.com/img/screenshots/detail.jpg
+  - https://bitaxeballer.com/img/screenshots/scan.jpg
+releaseNotes: >-
+  5tratumOS-compatible build. Runs on bridge networking so the tile loads behind
+  the 5tratumOS app-proxy (the stock host-networking recipe blank-pages there).
+  Set BBR_SCAN_SUBNET in the compose to your LAN to enable the network scanner;
+  add miners by IP either way.
+defaultUsername: ""
+defaultPassword: ""
+path: ""
+submitter: 465 Media
+submission: https://github.com/465media/bitaxe-baller
