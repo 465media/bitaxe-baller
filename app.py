@@ -237,6 +237,88 @@ def init_device_state(ip, label, chain_override=None, device_type=None):
     }
 
 
+# ---------- ARP-based MAC resolution (for MAC-less devices) ----------
+#
+# Some devices don't expose a MAC over their machine API — notably Braiins OS,
+# whose CGMiner API has no MAC field. The public leaderboard keys entries on
+# MAC (to de-dupe a board across submissions), so a MAC-less device can never
+# make the board. But we already poll every device over TCP every 5s, which
+# guarantees the host's ARP cache holds a fresh entry for it — so we can
+# recover the real NIC MAC from there.
+#
+# Trust boundary: ARP is L2, so this only returns the device's own MAC when the
+# device is on the same segment as the host. Across a router ARP would hand back
+# the gateway's MAC — but every device Baller tracks is a LAN miner the scanner
+# reached directly, so that case doesn't arise in practice.
+
+_arp_cache: dict = {}          # ip -> (mac, ts); mac == "" caches a miss
+_arp_cache_lock = threading.Lock()
+_ARP_CACHE_TTL_S = 600         # MACs are stable; re-resolve at most every 10 min
+_ARP_MISS_TTL_S = 30           # retry an unresolved IP soon (may be warming up)
+
+_MAC_RE = re.compile(r"(?:[0-9a-fA-F]{1,2}:){5}[0-9a-fA-F]{1,2}")
+_MAC_ZERO = "00:00:00:00:00:00"
+
+
+def _normalize_mac(raw: str) -> str:
+    """Zero-pad and lowercase a colon-separated MAC. '' unless it's 6 octets."""
+    parts = (raw or "").split(":")
+    if len(parts) != 6:
+        return ""
+    try:
+        return ":".join(f"{int(p, 16):02x}" for p in parts)
+    except ValueError:
+        return ""
+
+
+def _arp_lookup_raw(ip: str) -> str:
+    """Best-effort single-IP ARP lookup, no cache. Tries Linux /proc/net/arp
+    first (exact, no subprocess) then the `arp` command (macOS/BSD, and Linux
+    without /proc). Returns a normalized MAC or ''."""
+    # Linux: /proc/net/arp columns are: IP HWtype Flags HWaddress Mask Device
+    try:
+        with open("/proc/net/arp") as f:
+            next(f, None)  # header
+            for line in f:
+                cols = line.split()
+                if len(cols) >= 4 and cols[0] == ip:
+                    mac = _normalize_mac(cols[3])
+                    if mac and mac != _MAC_ZERO:
+                        return mac
+    except OSError:
+        pass  # not Linux / no procfs — fall through to the command
+    # macOS/BSD (and Linux fallback): `arp -n <ip>`
+    import subprocess
+    try:
+        out = subprocess.run(
+            ["arp", "-n", ip], capture_output=True, text=True, timeout=2
+        ).stdout
+    except (OSError, subprocess.SubprocessError):
+        return ""
+    m = _MAC_RE.search(out or "")
+    if not m:
+        return ""
+    mac = _normalize_mac(m.group(0))
+    return mac if mac != _MAC_ZERO else ""
+
+
+def _resolve_mac(ip: str) -> str:
+    """Cached ARP MAC lookup for `ip`. '' when it can't be resolved. Successes
+    are cached for _ARP_CACHE_TTL_S, misses briefly so a just-online device
+    (no ARP entry yet) gets retried on the next poll."""
+    now = time.time()
+    with _arp_cache_lock:
+        hit = _arp_cache.get(ip)
+        if hit:
+            mac, ts = hit
+            if (now - ts) < (_ARP_CACHE_TTL_S if mac else _ARP_MISS_TTL_S):
+                return mac
+    mac = _arp_lookup_raw(ip)
+    with _arp_cache_lock:
+        _arp_cache[ip] = (mac, now)
+    return mac
+
+
 # ---------- Braiins OS driver (BMM-101 etc.) — monitor-only ----------
 #
 # Braiins mini miners (BMM-101) run Braiins OS, not AxeOS: the web UI is an
@@ -299,7 +381,11 @@ def fetch_braiins(ip, timeout=3):
         "ASICModel": "BMM-101",
         "version": ver.get("BOSer", "") or "BOSer",
         "hostname": "",
-        "macAddr": "",  # not exposed by the CGMiner API; leaderboard submit skips MAC-less devices
+        # The CGMiner API exposes no MAC, so recover it from the host ARP cache
+        # (we've just polled :4028, so an entry exists). Lets the device reach
+        # the MAC-keyed leaderboard; '' if it can't be resolved, which the
+        # leaderboard submit then skips as before.
+        "macAddr": _resolve_mac(ip),
         "hashRate": (summary.get("MHS 1m", 0) or summary.get("MHS 5m", 0) or 0) / 1000.0,  # GH/s
         "expectedHashrate": (devs.get("Nominal MHS", 0) or 0) / 1000.0,
         "temp": temps.get("Chip", 0) or 0,
@@ -345,6 +431,53 @@ def _monitor_only_error(ip):
                      "pool changes, restarts and firmware stay in its own web UI."
         }), 400
     return None
+
+
+# Chips whose tuning PRESETS + safety BOUNDS we've actually validated on real
+# hardware: the Bitaxe / NerdQAxe family. Frequency and core-voltage limits are
+# chip-specific electrical bounds — the 400–900 MHz / 1000–1300 mV envelope is
+# BM1370-derived. Pushing that at a different chip (e.g. the 3nm BM1373 in a
+# Nexus S1) risks hardware damage we can't undo. So tuning is MONITOR-FIRST for
+# any identified chip NOT in this set: Baller still polls, charts, logs and
+# leaderboards it, but frequency/voltage tuning stays in the device's own web
+# UI until we validate a real unit. Fan/pool/restart/identify are chip-agnostic
+# and remain available. (An empty ASICModel = unidentifiable read → don't block,
+# so a flaky poll never locks a genuine Bitaxe out of its own tune panel.)
+_TUNABLE_CHIPS = {"BM1366", "BM1368", "BM1370"}
+
+
+def _device_chip(ip) -> str:
+    with state_lock:
+        return str(((state.get(ip) or {}).get("latest") or {}).get("ASICModel", "")).strip()
+
+
+def _tuning_supported(ip) -> bool:
+    """False only when the device reports a known ASIC we haven't validated
+    tuning bounds for (e.g. BM1373). Empty/unknown model → True (don't block)."""
+    model = _device_chip(ip)
+    return (not model) or (model in _TUNABLE_CHIPS)
+
+
+def _tuning_unsupported_msg(ip) -> str:
+    """Human-facing reason string when `ip`'s chip isn't tunable via Baller,
+    else '' . Shared by the single-device guard and the bulk-tune per-row path."""
+    if _tuning_supported(ip):
+        return ""
+    model = _device_chip(ip) or "this"
+    return (
+        f"Tuning isn't available for {model} chips in Bitaxe Baller yet — our "
+        f"presets and safety bounds are validated for the Bitaxe family "
+        f"(BM1366/1368/1370), and {model} has a different power envelope. Baller "
+        f"monitors it fully; set frequency and voltage from the device's own web UI."
+    )
+
+
+def _tuning_unsupported_error(ip):
+    """Returns a (response, status) rejection when `ip`'s ASIC isn't one we've
+    validated tuning bounds for, else None. Sits alongside _monitor_only_error
+    at the top of the frequency/voltage tuning endpoints."""
+    msg = _tuning_unsupported_msg(ip)
+    return (jsonify({"error": msg, "code": "chip_unsupported"}), 400) if msg else None
 
 
 def fetch_device(ip, timeout=3, device_type=None):
@@ -766,6 +899,16 @@ def compute_recommendations(s, hist, avgs, hw_rate_pct, shares_delta, j_per_th, 
             "title": f"Excellent efficiency — {j_per_th:.2f} J/TH",
             "body": "This is a solid operating point. Pushing harder may improve hashrate but cost efficiency.",
         })
+
+    # For chips whose tuning bounds we haven't validated (e.g. BM1373 / Nexus
+    # S1), the freq/voltage endpoints are locked (see _tuning_supported). Strip
+    # the one-click action off any tuning rec so we don't render a button that
+    # would just 400 — the advisory text (and its severity/health border) stays.
+    model = str(latest.get("ASICModel", "")).strip()
+    if model and model not in _TUNABLE_CHIPS:
+        for r in recs:
+            if isinstance(r.get("action"), dict) and r["action"].get("type") in ("tune", "preset"):
+                r.pop("action", None)
 
     # Severity priority for trimming: crit > warn > good > info
     order = {"crit": 0, "warn": 1, "good": 2, "info": 3}
@@ -1238,6 +1381,14 @@ def device_summary(s, elec=None):
         "lastError": s["last_error"],
         "deviceType": s.get("device_type", "axeos"),
         "model": latest.get("ASICModel", "unknown"),
+        # Whether Baller offers frequency/voltage tuning for this chip. False for
+        # identified ASICs whose bounds we haven't validated (e.g. BM1373 / Nexus
+        # S1) so the UI hides the tune panel. Computed inline (not via
+        # _tuning_supported, which takes state_lock) — device_summary already
+        # runs under that lock.
+        "tuningSupported": (lambda m: (not m) or (m in _TUNABLE_CHIPS))(
+            str(latest.get("ASICModel", "")).strip()
+        ),
         "version": latest.get("version", ""),
         "hostname": latest.get("hostname", ""),
         "macAddr": latest.get("macAddr", ""),
@@ -3222,6 +3373,12 @@ def _fetch_firmware_catalog() -> dict:
 # it OUT (a real Bitaxe just won't get the notice — annoying, not dangerous). Lock this
 # down against the real NerdAxe rev7's reported boardVersion before the v1.18.0 cut, and
 # ideally move it catalog-driven (the site already curates per-board).
+#
+# Non-Bitaxe devices that MUST stay excluded (regression-tested in
+# tests/test_firmware_guard.py): the Nexus S1 (ASICModel BM1373, a different
+# vendor on a 3nm S23 chip stock Bitaxe firmware doesn't target) and NerdQAxe
+# (its own ESP-Miner fork). Whatever boardVersion those forks report, do NOT
+# add it here — a false inclusion fails OPEN into the exact brick this prevents.
 _BITAXE_BOARD_VERSIONS = {
     "200", "201", "202", "203", "204", "205",   # Ultra (BM1366) — documented, unverified
     "400", "401", "402", "403",                  # Supra (BM1368) — documented, unverified
@@ -3889,6 +4046,9 @@ def api_lan_info():
     the scanning animation when the page is loaded via localhost or
     bitaxe-baller.local (i.e. the URL has no IP literal to derive the subnet from)."""
     lan_ip = detect_lan_ip()
+    override = _scan_subnet_override()
+    if override:
+        return jsonify({"lan_ip": lan_ip, "subnet_prefix": override, "subnet": f"{override}.0/24"})
     if not lan_ip or not _is_private_v4(lan_ip):
         return jsonify({"lan_ip": lan_ip, "subnet_prefix": None, "subnet": None})
     prefix = ".".join(lan_ip.split(".")[:3])
@@ -3901,11 +4061,17 @@ def api_scan():
     each address in parallel. Returns the ones that respond. Already-added
     devices and the host itself are skipped."""
     lan_ip = detect_lan_ip()
-    if not lan_ip or not _is_private_v4(lan_ip):
-        return jsonify({"error": "couldn't detect a private LAN IP to scan"}), 400
-
-    parts = lan_ip.split(".")
-    base = ".".join(parts[:3])
+    override = _scan_subnet_override()
+    if override:
+        # Bridged container: our own IP is on the Docker network, so trust the
+        # operator-supplied LAN /24 instead of auto-detection. lan_ip (a bridge
+        # address) is still fine for the skip-self filter — it won't match a LAN
+        # candidate — so we don't hard-fail when it isn't private here.
+        base = override
+    else:
+        if not lan_ip or not _is_private_v4(lan_ip):
+            return jsonify({"error": "couldn't detect a private LAN IP to scan"}), 400
+        base = ".".join(lan_ip.split(".")[:3])
 
     with config_lock:
         existing = {d["ip"] for d in load_config().get("devices", [])}
@@ -4147,7 +4313,7 @@ def api_device_tune():
     ip = body.get("ip")
     if not ip:
         return jsonify({"error": "IP required"}), 400
-    blocked = _monitor_only_error(ip)
+    blocked = _monitor_only_error(ip) or _tuning_unsupported_error(ip)
     if blocked:
         return blocked
 
@@ -4196,7 +4362,7 @@ def api_device_preset():
     name = body.get("preset")
     if not ip or name not in PRESETS:
         return jsonify({"error": "Bad preset"}), 400
-    blocked = _monitor_only_error(ip)
+    blocked = _monitor_only_error(ip) or _tuning_unsupported_error(ip)
     if blocked:
         return blocked
     p = PRESETS[name]
@@ -4351,7 +4517,7 @@ def api_autotune_start():
     ip = body.get("ip")
     if not ip:
         return jsonify({"error": "IP required"}), 400
-    blocked = _monitor_only_error(ip)
+    blocked = _monitor_only_error(ip) or _tuning_unsupported_error(ip)
     if blocked:
         return blocked
     with state_lock:
@@ -4485,6 +4651,14 @@ def api_devices_bulk_tune():
     targets = [ip for ip in ips if ip in known_ips]
 
     def apply_one(ip):
+        # Skip devices we must never push AxeOS tuning at, with a per-row reason
+        # so the UI shows why (rather than a confusing raw PATCH failure).
+        if _is_monitor_only(ip):
+            return {"ip": ip, "ok": False,
+                    "error": "Monitor-only device (Braiins OS) — tuning stays in its own web UI."}
+        chip_msg = _tuning_unsupported_msg(ip)
+        if chip_msg:
+            return {"ip": ip, "ok": False, "error": chip_msg}
         try:
             patch_device(ip, settings)
             # Reset per-device baseline so the next measurement window starts clean.
@@ -4978,6 +5152,30 @@ def detect_lan_ip():
             return socket.gethostbyname(socket.gethostname())
         except Exception:
             return None
+
+
+def _scan_subnet_override():
+    """Operator override for which /24 the LAN scanner probes, via the
+    BBR_SCAN_SUBNET env var. Needed when Baller runs in a BRIDGED container
+    (e.g. a 5tratumOS / Umbrel app on the default Docker network): the container's
+    own IP is on the Docker bridge, not the LAN, so auto-detection would scan the
+    wrong subnet. Set it to the real LAN /24 — '192.168.1.0/24' or just
+    '192.168.1' both work. Returns the 3-octet base prefix (e.g. '192.168.1')
+    or None when unset / malformed / non-private."""
+    raw = (os.environ.get("BBR_SCAN_SUBNET") or "").strip()
+    if not raw:
+        return None
+    octets = raw.split("/")[0].split(".")   # tolerate '.../24', '.0', bare prefix
+    if len(octets) < 3:
+        return None
+    try:
+        vals = [int(o) for o in octets[:3]]
+    except ValueError:
+        return None
+    if any(v < 0 or v > 255 for v in vals):
+        return None
+    base = ".".join(str(v) for v in vals)
+    return base if _is_private_v4(base + ".1") else None
 
 
 HOST = os.environ.get("HOST", "0.0.0.0")

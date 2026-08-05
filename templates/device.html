@@ -522,6 +522,10 @@ function renderDetail(d) {
   // Braiins OS devices (BMM-101) are monitor-only: no AxeOS tune/pool/restart,
   // and no frequency/voltage/VR-temp telemetry — BOSer manages its own tuning.
   const isBraiins = d.deviceType === 'braiins';
+  // Chips whose tuning bounds we haven't validated (e.g. BM1373 / Nexus S1) are
+  // tuning-locked: we hide the freq/voltage tune panel + auto-tune sweep, but
+  // pool config and restart stay (chip-agnostic). Backend enforces this too.
+  const tuningLocked = d.tuningSupported === false;
 
   return `
     <div class="detail-hero">
@@ -621,6 +625,19 @@ function renderDetail(d) {
         This is a <strong>Braiins OS</strong> miner — Bitaxe Baller monitors it (hashrate, temps, shares, best diff, uptime, block finds) but doesn't drive it: BOSer runs its own autotuner, and tuning, pool config, restarts and firmware all live in its own interface.
         <a href="http://${d.ip}" target="_blank" rel="noopener" data-tip="Opens the miner's built-in Braiins OS web UI in a new tab.">Open the Braiins OS UI →</a>
       </div>
+    </div>
+    ` : tuningLocked ? `
+    <div class="detail-section">
+      <h2>tune & control</h2>
+      <div class="hint" style="font-size: 12px; line-height: 1.6;">
+        Frequency/voltage tuning isn't available for <strong>${escapeHtml(d.model || 'this chip')}</strong> in Bitaxe Baller yet. Our presets and safety bounds are validated for the Bitaxe family (BM1366/1368/1370), and ${escapeHtml(d.model || 'this chip')} runs a different power envelope — pushing Bitaxe limits at it could damage the hardware. Baller monitors it fully (hashrate, temps, shares, best diff, block finds); set frequency and voltage from the device's own web UI.
+        <a href="http://${d.ip}" target="_blank" rel="noopener" data-tip="Opens the miner's built-in web UI in a new tab.">Open the device's web UI →</a>
+      </div>
+    </div>
+
+    <div class="detail-section">
+      <h2>pool / stratum config</h2>
+      ${poolForm(d)}
     </div>
     ` : `
     <div class="detail-section">
