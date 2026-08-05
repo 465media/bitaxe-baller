@@ -1,0 +1,34 @@
+[1m▸ Bitaxe Baller release v1.21.0  (dry-run=0, from=start)[0m
+[33m! working tree not clean — prep will add to it[0m
+[32m✓ preflight passed  (notes: /Users/nbaldwin/development/bitaxe-baller/build/release-notes/v1.21.0.md)[0m
+[1m▸ prep — version bumps + changelog/release notes[0m
+  $ git pull --rebase origin main
+From https://github.com/465media/bitaxe-baller
+ * branch            main       -> FETCH_HEAD
+Current branch main is up to date.
+  $ python3 build/release_prep.py bump 1.21.0 --root /Users/nbaldwin/development/bitaxe-baller
+[release_prep] bump → 1.21.0
+  bumped  app.py
+  bumped  templates/dashboard.html
+  bumped  templates/device.html
+  bumped  build/bitaxe-baller.spec
+  bumped  umbrel/umbrel-app.yml
+  bumped  CLAUDE.md
+  $ python3 build/release_prep.py notes 1.21.0 --notes /Users/nbaldwin/development/bitaxe-baller/build/release-notes/v1.21.0.md --root /Users/nbaldwin/development/bitaxe-baller --site /Volumes/WDBlack/Home/Development/bitaxe-baller-site
+[release_prep] umbrel-app.yml ← v1.21.0 releaseNotes
+[release_prep] changelog.html ← v1.21.0 entry (2026-08-05)
+
+[1m----- main repo diff -----[0m
+ CLAUDE.md                |  4 ++--
+ app.py                   |  2 +-
+ build/bitaxe-baller.spec |  6 +++---
+ templates/dashboard.html |  2 +-
+ templates/device.html    |  2 +-
+ umbrel/umbrel-app.yml    | 16 +++++++++++++++-
+ 6 files changed, 23 insertions(+), 9 deletions(-)
+[1m----- site changelog diff -----[0m
+ public/changelog.html | 8 ++++++++
+ 1 file changed, 8 insertions(+)
+[32m✓ prep done[0m
+[1m▸ commit + push main[0m
+  $ git add -A

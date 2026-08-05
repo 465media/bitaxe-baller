@@ -23,7 +23,7 @@ category: bitcoin
 # manifest fixes) can bump the patch component independently — the image
 # is pinned by digest, so the underlying app code stays the same. Next
 # aligned release across all platforms resets this.
-version: "1.20.1"
+version: "1.21.0"
 
 port: 13700
 description: >-
@@ -69,6 +69,20 @@ gallery:
   - https://bitaxeballer.com/img/screenshots/scan.jpg
 
 releaseNotes: >-
+  v1.21.0 — Braiins miners on the leaderboard + safer support for new chips. Braiins
+  mini-miners now compete on the public leaderboard. Your BMM-101 (and other Braiins OS
+  mini-miners) are scored right alongside your Bitaxes at bitaxeballer.com/leaderboard.
+  Baller recovers the board's network address for you — nothing to set up, just have the
+  leaderboard enabled. Safer support for new AxeOS-fork miners (e.g. the Nexus S1 /
+  BM1373). Baller monitors them fully — hashrate, temps, shares, best-diff, block finds,
+  charts, and the leaderboard — but keeps frequency/voltage tuning in the device's own
+  web UI for chips whose safe limits we haven't validated. That means Baller won't push
+  Bitaxe-tuned settings at silicon with a different power envelope. Pool config and
+  restart still work as normal. Self-host / advanced: a new BBR_SCAN_SUBNET setting lets
+  the network scanner find your miners when Baller runs in a bridged container, plus a
+  5tratumOS-ready Umbrel recipe. Most users don't need to touch this.
+
+
   v1.20.1 — Fix: DigiByte solo-block odds. DigiByte is multi-algorithm and only
   SHA-256 is what your Bitaxe mines; we were using DGB's aggregate network
   difficulty, which made the solo-block odds look far too optimistic. Those odds
