@@ -589,29 +589,32 @@ def poll_one(ip, label, device_type=None):
             if cur_best_val > s["prev_best_diff_value"]:
                 s["prev_best_diff_value"] = cur_best_val
 
-            # BLOCK FOUND detection. Firmware exposes a `blockFound` counter
-            # that increments on a real solved-block share. We baseline it
-            # on the first successful poll (prev_block_found == None → just
-            # latch the current value) so we never false-fire on startup
-            # from an existing nonzero count. After baseline, any positive
-            # delta is a celebration trigger — _block_finds_record persists
-            # it + the dashboard's poll will pick up the unack'd find and
-            # throw confetti. Multi-find catch-up (e.g. device offline for
-            # a while, blockFound jumped by N) produces a single record
-            # tagged with the delta count.
-            cur_block_found = int(data.get("blockFound") or 0)
-            if s["prev_block_found"] is None:
-                # First poll for this device this session — baseline only.
-                s["prev_block_found"] = cur_block_found
-            elif cur_block_found > s["prev_block_found"]:
-                delta = cur_block_found - s["prev_block_found"]
-                s["prev_block_found"] = cur_block_found
+            # BLOCK FOUND detection. The firmware exposes a counter that
+            # increments on a real solved-block share — under one of three
+            # different names depending on which firmware family this is
+            # (see _BLOCK_COUNT_FIELDS). We baseline it on the first
+            # successful poll (prev_block_found == None → just latch the
+            # current value) so we never false-fire on startup from an
+            # existing nonzero count. After baseline, any positive delta is
+            # a celebration trigger — _block_finds_record persists it + the
+            # dashboard's poll will pick up the unack'd find and throw
+            # confetti. Multi-find catch-up (e.g. device offline for a while,
+            # the counter jumped by N) produces a single record tagged with
+            # the delta count.
+            cur_block_found = _device_block_count(data)
+            s["prev_block_found"], block_delta = _block_find_transition(
+                s["prev_block_found"], cur_block_found
+            )
+            if block_delta > 0:
+                delta = block_delta
                 chain_id = s.get("chain_override") or _infer_chain(
                     data.get("stratumURL", ""),
                     data.get("stratumPort", 0),
                     data.get("stratumUser", ""),
                 )
-                rec = _block_finds_record(ip, s["label"], data, chain_id)
+                # state_lock is held here, which _fleet_block_height requires.
+                rec = _block_finds_record(ip, s["label"], data, chain_id,
+                                          height_fallback=_fleet_block_height(chain_id))
                 rec["delta"] = delta  # so the UI can say "+N blocks found"
                 log_event(ip, f"🎉 BLOCK FOUND on {rec['chain_name']} (height {rec['block_height']}, diff {rec['best_diff']})")
                 # Block-found is the one alert nobody wants to miss — but DON'T dispatch
@@ -1523,8 +1526,10 @@ def device_summary(s, elec=None):
 
 # ---------- Block-found celebration ----------
 #
-# The Bitaxe firmware exposes a `blockFound` counter that increments each
-# time the device actually solves a network block (validated by the pool).
+# The firmware exposes a solved-block counter that increments each time the
+# device actually solves a network block (validated by the pool) — spelled
+# `blockFound` on stock AxeOS, `totalFoundBlocks`/`foundBlocks` on the
+# NerdQAxe fork; _device_block_count papers over the difference.
 # When that counter ticks up between polls we treat it as a real, live,
 # "the lottery hit" event — the rarest, most celebratory thing that can
 # happen in solo mining — and persist a record so the dashboard can throw
@@ -1590,11 +1595,96 @@ def _block_finds_save() -> None:
         print(f"[block-finds] save failed: {e}", file=sys.stderr)
 
 
-def _block_finds_record(ip: str, label: str, latest: dict, chain_id: str) -> dict:
+# Firmware counter field names, in preference order. Stock Bitaxe AxeOS uses
+# `blockFound`; the NerdQAxe fork (shufps/ESP-Miner-NerdQAxePlus) has no such
+# field at all and uses `foundBlocks` / `totalFoundBlocks` instead — so every
+# NerdQAxe block find was silently invisible. Found the hard way: Nathan's
+# nerdaxe_001 solved two DGB blocks in three days (2026-08-15, 2026-08-18)
+# and the app showed nothing either time.
+#
+# `totalFoundBlocks` before `foundBlocks`: the "total" is the lifetime count
+# that survives a reboot. A session-scoped counter resets to 0 on restart and
+# climbs back up, which would re-fire the celebration for an old block.
+_BLOCK_COUNT_FIELDS = ("blockFound", "totalFoundBlocks", "foundBlocks")
+
+
+def _device_block_count(latest):
+    """The device's solved-block counter, or None if this firmware exposes no
+    such field.
+
+    None is NOT 0. A device reporting 0 is telling us it has found nothing; a
+    device reporting nothing at all must not be baselined as 0 — treating the
+    two alike is exactly what disabled detection on the NerdQAxe fork.
+    """
+    for key in _BLOCK_COUNT_FIELDS:
+        val = latest.get(key)
+        if val is None:
+            continue
+        try:
+            return int(val)
+        except (TypeError, ValueError):
+            continue
+    return None
+
+
+def _block_find_transition(prev, cur):
+    """Decide what a new counter reading means. Returns (new_prev, delta);
+    delta > 0 is a real find to celebrate, 0 means do nothing.
+
+      cur is None  -> firmware has no counter; hold prev unchanged.
+      prev is None -> first poll this session; baseline only, never fire.
+      cur < prev   -> counter went backwards: firmware reset/wipe, or a
+                      firmware update moved us to a different source field.
+                      Re-baseline. Ignoring it instead would mean the climb
+                      back up to the old value reads as "no new blocks" and
+                      we'd miss the next real find.
+      cur > prev   -> real find(s); delta covers catch-up if we were away.
+    """
+    if cur is None:
+        return prev, 0
+    if prev is None or cur < prev:
+        return cur, 0
+    if cur > prev:
+        return cur, cur - prev
+    return prev, 0
+
+
+def _fleet_block_height(chain_id):
+    """Best-known chain tip for `chain_id` across the fleet, or 0.
+
+    The NerdQAxe fork doesn't report `blockHeight`, so a find on one of those
+    records height 0 — but any other device on the SAME chain has the number.
+    Chain-scoped on purpose: a mixed BTC+DGB fleet would otherwise stamp a BTC
+    find with DGB's (much larger) height. Caller must hold state_lock.
+    """
+    heights = []
+    for st in state.values():
+        latest = st.get("latest") or {}
+        other = st.get("chain_override") or _infer_chain(
+            latest.get("stratumURL", ""),
+            latest.get("stratumPort", 0),
+            latest.get("stratumUser", ""),
+        )
+        if other != chain_id:
+            continue
+        try:
+            h = int(latest.get("blockHeight") or 0)
+        except (TypeError, ValueError):
+            continue
+        if h > 0:
+            heights.append(h)
+    return max(heights) if heights else 0
+
+
+def _block_finds_record(ip: str, label: str, latest: dict, chain_id: str,
+                        height_fallback: int = 0) -> dict:
     """Append a new block-find record to the persistent list. Returns the
     record (with the id assigned) so callers can attach it to the device
     event log and/or fire downstream notifications. Idempotent on its own
-    inputs but the caller must gate on a real prev_block_found delta."""
+    inputs but the caller must gate on a real prev_block_found delta.
+
+    `height_fallback` is used when the device's own firmware doesn't report
+    `blockHeight` (the NerdQAxe fork doesn't) — see _fleet_block_height."""
     rec = {
         # Monotonic id is enough since this list is per-install. UUID4 would
         # work too but adds a dep + we don't need cross-install uniqueness.
@@ -1607,7 +1697,7 @@ def _block_finds_record(ip: str, label: str, latest: dict, chain_id: str) -> dic
             "btc": "Bitcoin", "bch": "Bitcoin Cash", "bsv": "Bitcoin SV",
             "xec": "eCash",   "dgb": "DigiByte",     "nmc": "Namecoin",
         }.get(chain_id, chain_id.upper()),
-        "block_height": int(latest.get("blockHeight") or 0),
+        "block_height": int(latest.get("blockHeight") or 0) or int(height_fallback or 0),
         "best_diff": str(latest.get("bestDiff") or "0"),
         "best_session_diff": str(latest.get("bestSessionDiff") or "0"),
         "found_at": int(time.time()),
