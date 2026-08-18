@@ -953,10 +953,17 @@ _BLOCK_REWARDS = {
 #   (e.g. coinotron, 2mars) — they'd misclassify other coins served
 #   from the same host. We'd need a (host, port) → chain table for
 #   those; punted until a user hits the case.
+#
+# Coverage notes (2026-08-17):
+# - DGB: added the "digi." subdomain needle for hmpool (digi.hmpool.io).
+#   hmpool is multi-coin, so we deliberately do NOT match the bare
+#   "hmpool" host — the coin lives in the subdomain, and its BTC/BCH
+#   siblings are already handled (bch.* by the BCH needle, btc.* by the
+#   BTC fall-through).
 _CHAIN_PATTERNS = [
     ("xec", ("xec.", "-xec.", "ecash", "bcha", "xeggex", "viabtc")),
     ("bsv", ("bsv.", "-bsv.", "bitcoin-sv", "bitcoin sv")),
-    ("dgb", ("dgb.", "-dgb.", "digibyte",
+    ("dgb", ("dgb.", "-dgb.", "digibyte", "digi.",
              "digihash", "dgbpool", "weminemore", "letsmine")),
     ("nmc", ("nmc.", "-nmc.", "namecoin")),
     # BCH last among the alts — its "bch" needle is a substring of common
@@ -968,6 +975,27 @@ _CHAIN_PATTERNS = [
 _chain_stats_cache = {}   # chain_id → (fetched_at, stats_dict)
 _CHAIN_TTL_SEC = 600
 
+# Base58 alphabet (no 0/O/I/l). Used to sanity-check a legacy payout address
+# so a worker name like "Downstairs-rig" can't masquerade as one.
+_BASE58_ALPHABET = frozenset("123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz")
+
+
+def _is_legacy_dgb_address(addr):
+    """True for a DigiByte P2PKH address: base58, 'D' prefix, 34 chars.
+
+    Among the SHA-256d chains this app supports, a leading 'D' is unique to
+    DGB — BTC / BCH / BSV / XEC legacy addresses are '1' or '3', NMC is 'N'
+    or 'M'. The historic reason for skipping this prefix was the DOGE
+    collision, but DOGE is scrypt, so it can't be the target of any miner
+    we monitor. That makes the prefix safe *here* even though it isn't
+    safe in general.
+    """
+    return (
+        len(addr) == 34
+        and addr[:1] == "D"
+        and all(c in _BASE58_ALPHABET for c in addr)
+    )
+
 def _infer_chain(stratum_url, stratum_port=0, stratum_user=""):
     """
     Detect the chain a miner is pointed at. Priority order, most reliable first:
@@ -977,20 +1005,26 @@ def _infer_chain(stratum_url, stratum_port=0, stratum_user=""):
          is a definitive signal — "bitcoincash:..." is BCH, "ecash:..." is
          XEC, "dgb1..." is DGB. Pool URLs rebrand and multi-coin pools muddy
          the URL signal, but a chain-tagged address can only be one coin.
-         Legacy base58 prefixes (BTC '1'/'3', DGB 'D', DOGE 'D', LTC 'L')
-         are ambiguous so we don't read them — pool URL handles those.
+         Legacy base58 'D...' is read as DGB (see _is_legacy_dgb_address);
+         the other legacy prefixes (BTC '1'/'3', LTC 'L') stay ambiguous
+         across the chains we support, so the pool URL handles those.
       2. URL needles (legacy multi-coin pool subdomains like xec.pool.com).
       3. solohash.co.uk port heuristic (3337 = BCH, 3333 = BTC).
       4. Fall through to BTC.
     """
-    user = str(stratum_user or "").lower()
+    user_raw = str(stratum_user or "")
+    user = user_raw.lower()
     if user.startswith("bitcoincash:") or user.startswith("bchtest:"):
         return "bch"
     if user.startswith("ecash:"):
         return "xec"
     # DGB bech32 addresses start with 'dgb1' — unambiguous.
-    # (Legacy 'D...' base58 collides with DOGE; don't read those.)
     if user.startswith("dgb1"):
+        return "dgb"
+    # Legacy base58 DGB address. Worker names are "<address>.<rig-name>", so
+    # the address is everything before the first dot (case-sensitive — base58
+    # is, and 'D' vs 'd' is the whole signal).
+    if _is_legacy_dgb_address(user_raw.split(".", 1)[0]):
         return "dgb"
     if not stratum_url:
         return "btc"
@@ -1020,6 +1054,18 @@ _CHAIN_INFERENCE_FIXTURES = [
     ("letsmine DGB (Nathan)",  "us1.letsmine.it",         3335,  "DALF5...Bitaxe_004",     "dgb"),
     ("digihash DGB",           "pool.digihash.co",        3008,  "DABCxyz.worker",         "dgb"),
     ("dgb1 bech32 worker",     "any.pool.example",        3333,  "dgb1qabcxyz.worker",     "dgb"),
+    # hmpool DGB — Nathan's whole fleet, 2026-08-17. Caught by the "digi."
+    # subdomain needle AND by the legacy 'D' address, independently.
+    ("hmpool DGB (Bitaxe)",    "digi.hmpool.io",          3334,  "DALF5mgtRW8of8zdfwY69aGtR7NtrRpyy1.bitaxe001", "dgb"),
+    ("hmpool DGB (NerdQAxe)",  "digi.hmpool.io",          3336,  "DALF5mgtRW8of8zdfwY69aGtR7NtrRpyy1.nerdaxe001", "dgb"),
+    # Legacy 'D' address alone is enough, even on an unknown host.
+    ("legacy D addr, no dot",  "unknown.pool.example",    3333,  "DALF5mgtRW8of8zdfwY69aGtR7NtrRpyy1", "dgb"),
+    # ...but it must actually look like an address. These must NOT be DGB:
+    ("D worker name only",     "public-pool.io",          21496, "Downstairs.rig-01",      "btc"),
+    ("D-prefix, wrong length", "public-pool.io",          21496, "DALF5mgtRW8of8zdfwY69aGtR7Ntr.w", "btc"),
+    ("D-prefix, non-base58",   "public-pool.io",          21496, "D0ALF5mgtRW8of8zdfwY69aGtR7NtrRpy.w", "btc"),
+    # hmpool is multi-coin — the sibling subdomains must still route right.
+    ("hmpool BCH sibling",     "bch.hmpool.io",           3334,  "bitcoincash:qz...x",     "bch"),
     ("ecash: address",         "any.pool.example",        3333,  "ecash:qz...x",           "xec"),
     ("viabtc XEC",             "xec.viabtc.com",          3333,  "user.worker",            "xec"),
     ("bsv pool",               "stratum.bsv.example",     3333,  "1abc...x.worker",        "bsv"),
