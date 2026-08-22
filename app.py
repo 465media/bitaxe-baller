@@ -3586,12 +3586,20 @@ def api_firmware_check():
 
 # ----- AxeOS firmware flashing (free: single-device, user-supplied files; Pro: catalog auto-fetch + bulk) -----
 #
-# Orchestrates the two-file AxeOS OTA flash across one or more miners. The order is a
-# safety detail (see the spec): www.bin (web UI) FIRST — it does NOT reboot — then
-# esp-miner.bin (firmware) LAST, which reboots the device. If the upload format is ever
-# wrong, OTAWWW fails before anything reboots, so the device is left untouched.
+# Orchestrates the AxeOS OTA flash across one or more miners. When there are two files
+# the order is a safety detail (see the spec): www.bin (web UI) FIRST — it does NOT
+# reboot — then esp-miner.bin (firmware) LAST, which reboots the device. If the upload
+# format is ever wrong, OTAWWW fails before anything reboots, so the device is left
+# untouched.
 #
-# Per-device phases: queued → (downloading) → pausing → flashing_www → flashing_firmware
+# AxeOS v2.15.0 embedded the web UI into esp-miner.bin and dropped www.bin, so from
+# that release on there is only one upload and the flashing_www phase is skipped. Note
+# that this also removes the no-reboot canary above: the sha256 check in
+# _ensure_firmware_binary is then the only thing standing between a bad download and a
+# device rebooting into it. Never substitute esp-miner.bin for www.bin to "keep the
+# pair" — that writes a firmware image to the web-UI partition.
+#
+# Per-device phases: queued → (downloading) → pausing → [flashing_www] → flashing_firmware
 #                    → rebooting → verifying → done | failed | skipped
 # Devices flash SEQUENTIALLY with stop-on-failure — one bad release can't take out the
 # whole fleet at once. The UI polls /api/firmware/flash-progress.
@@ -3621,9 +3629,13 @@ def _fetch_firmware_releases() -> list:
 
 
 def _firmware_pair_for(version=None) -> "dict | None":
-    """The universal www + firmware asset pair for a blessed version (latest blessed if
-    version is None). Returns {'version', 'www': {url,sha256,size}, 'firmware': {...}} or
-    None if the version isn't blessed / is missing an asset."""
+    """The universal OTA assets for a blessed version (latest blessed if version is
+    None). Returns {'version', 'www': {url,sha256,size} | None, 'firmware': {...}} or
+    None if the version isn't blessed / has no firmware asset.
+
+    `www` is optional: AxeOS v2.15.0 embedded the web UI into esp-miner.bin and
+    stopped shipping www.bin. Releases at v2.14.x and older still ship both and are
+    still flashed as a pair. esp-miner.bin is the one asset we cannot do without."""
     releases = _fetch_firmware_releases()
     if not releases:
         return None
@@ -3638,7 +3650,7 @@ def _firmware_pair_for(version=None) -> "dict | None":
         # board_version 0 == universal OTA (applies to every board)
         if a.get("board_version") in (0, None) and a.get("kind") in ("www", "firmware"):
             pair[a["kind"]] = {"url": a.get("url"), "sha256": a.get("sha256"), "size": a.get("size")}
-    if not pair["www"] or not pair["firmware"]:
+    if not pair["firmware"]:
         return None
     return pair
 
@@ -3753,11 +3765,16 @@ def _flash_worker(target_version, items, www_path, fw_path, from_catalog):
             target_version = pair["version"]
             with _flash_lock:
                 _flash_state["version"] = target_version
-            www_path = _ensure_firmware_binary(target_version, "www", pair["www"])
+            www_path = (_ensure_firmware_binary(target_version, "www", pair["www"])
+                        if pair["www"] else None)
             fw_path = _ensure_firmware_binary(target_version, "firmware", pair["firmware"])
 
-        with open(www_path, "rb") as f:
-            www_data = f.read()
+        # www_data stays None for v2.15.0+ (web UI embedded in esp-miner.bin) and for a
+        # manual upload where the user only had the one file.
+        www_data = None
+        if www_path:
+            with open(www_path, "rb") as f:
+                www_data = f.read()
         with open(fw_path, "rb") as f:
             fw_data = f.read()
 
@@ -3798,8 +3815,9 @@ def _flash_worker(target_version, items, www_path, fw_path, from_catalog):
                 except Exception:
                     pass  # best-effort; mining also stops during flash anyway
 
-                _flash_set(ip, "flashing_www")
-                _ota_upload(ip, "OTAWWW", www_data)      # web UI first — no reboot
+                if www_data is not None:
+                    _flash_set(ip, "flashing_www")
+                    _ota_upload(ip, "OTAWWW", www_data)  # web UI first — no reboot
 
                 _flash_set(ip, "flashing_firmware")
                 try:
@@ -3859,8 +3877,9 @@ def api_firmware_flash():
     """Start a firmware flash job.
 
     Two request shapes:
-      • multipart/form-data — FREE single-device manual flash: fields `ip`, files `www`
-        + `firmware` (user supplies the two .bin files). Single device only.
+      • multipart/form-data — FREE single-device manual flash: field `ip`, file
+        `firmware` (required) and `www` (optional — AxeOS v2.15.0+ has no www.bin).
+        Single device only.
       • application/json — PRO catalog flash: `{ips:[...], version?}` (auto-fetches the
         blessed binaries; version defaults to latest blessed). Bulk (>1) is Pro-only.
     """
@@ -3877,15 +3896,17 @@ def api_firmware_flash():
             return jsonify({"error": "ip required"}), 400
         www = request.files.get("www")
         fw = request.files.get("firmware")
-        if not www or not fw:
-            return jsonify({"error": "both www.bin and esp-miner.bin are required"}), 400
-        # Light sanity: the firmware is the rebooting one and is the larger binary; warn on
-        # obviously-swapped files by name, but don't hard-block (names vary).
+        # www.bin is optional — AxeOS v2.15.0+ ships esp-miner.bin only (web UI embedded),
+        # so a user updating to it has just the one file. esp-miner.bin is required.
+        if not fw:
+            return jsonify({"error": "esp-miner.bin is required"}), 400
         os.makedirs(FIRMWARE_CACHE_DIR, exist_ok=True)
         import tempfile
-        wfd, www_path = tempfile.mkstemp(suffix="_www.bin", dir=FIRMWARE_CACHE_DIR); os.close(wfd)
+        www_path = None
+        if www:
+            wfd, www_path = tempfile.mkstemp(suffix="_www.bin", dir=FIRMWARE_CACHE_DIR); os.close(wfd)
+            www.save(www_path)
         ffd, fw_path = tempfile.mkstemp(suffix="_esp-miner.bin", dir=FIRMWARE_CACHE_DIR); os.close(ffd)
-        www.save(www_path)
         fw.save(fw_path)
         target_version = "(manual)"
         with state_lock:
