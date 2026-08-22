@@ -23,7 +23,7 @@ category: bitcoin
 # manifest fixes) can bump the patch component independently — the image
 # is pinned by digest, so the underlying app code stays the same. Next
 # aligned release across all platforms resets this.
-version: "1.21.2"
+version: "1.21.3"
 
 port: 13700
 description: >-
@@ -69,6 +69,16 @@ gallery:
   - https://bitaxeballer.com/img/screenshots/scan.jpg
 
 releaseNotes: >-
+  v1.21.3 — Support for AxeOS v2.15.0 firmware updates. Fixed: AxeOS v2.15.0 couldn't be
+  installed from Baller. Starting with v2.15.0, AxeOS bundles its web interface into the
+  main firmware file instead of shipping it separately. Baller still expected the old
+  two-file layout, so v2.15.0 either wouldn't appear as available or would fail partway
+  through. It now handles both layouts — v2.15.0 and newer install as a single file, and
+  older versions update exactly as before. Manual updates match: the update form on the
+  device page now asks only for esp-miner.bin when that's all a release provides. If
+  you're updating to v2.14.x or older, keep supplying both files as usual.
+
+
   v1.21.2 — Block finds now detected on NerdQAxe miners. Fixed: a solved block on a
   NerdQAxe was never noticed. Baller looked for the block counter under the name stock
   Bitaxe firmware uses; the NerdQAxe firmware reports it under a different name, so a
