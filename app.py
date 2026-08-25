@@ -602,9 +602,18 @@ def poll_one(ip, label, device_type=None):
             # the counter jumped by N) produces a single record tagged with
             # the delta count.
             cur_block_found = _device_block_count(data)
+            # First poll of this run seeds from the PERSISTED counter, not from
+            # whatever the device reports now — that's what lets a block found
+            # while Baller was closed still surface. A delta on this first poll
+            # therefore means "found while we weren't watching", which the
+            # record and the celebration both say out loud.
+            found_while_away = s["prev_block_found"] is None
+            if found_while_away:
+                s["prev_block_found"] = _block_counters_get(ip)
             s["prev_block_found"], block_delta = _block_find_transition(
                 s["prev_block_found"], cur_block_found
             )
+            _block_counters_set(ip, cur_block_found)
             if block_delta > 0:
                 delta = block_delta
                 chain_id = s.get("chain_override") or _infer_chain(
@@ -614,7 +623,8 @@ def poll_one(ip, label, device_type=None):
                 )
                 # state_lock is held here, which _fleet_block_height requires.
                 rec = _block_finds_record(ip, s["label"], data, chain_id,
-                                          height_fallback=_fleet_block_height(chain_id))
+                                          height_fallback=_fleet_block_height(chain_id),
+                                          while_away=found_while_away)
                 rec["delta"] = delta  # so the UI can say "+N blocks found"
                 log_event(ip, f"🎉 BLOCK FOUND on {rec['chain_name']} (height {rec['block_height']}, diff {rec['best_diff']})")
                 # Block-found is the one alert nobody wants to miss — but DON'T dispatch
@@ -622,10 +632,12 @@ def poll_one(ip, label, device_type=None):
                 # state_lock means a slow or hung webhook freezes every device poll and the
                 # dashboard (/api/devices blocks on the same lock). Capture it now, fire it
                 # once the lock is released (below), same as the offline/temp alerts path.
+                when = ("solved a" if not found_while_away
+                        else "solved a (while Baller was closed — just detected now)")
                 block_found_alert = (
                     s["label"], ip,
                     f"🎉 BLOCK FOUND: {s['label']} on {rec['chain_name']}",
-                    f"Bitaxe {s['label']} just solved a {rec['chain_name']} block at height {rec['block_height']}. "
+                    f"Bitaxe {s['label']} {when} {rec['chain_name']} block at height {rec['block_height']}. "
                     f"Difficulty: {rec['best_diff']}. Look at your wallet — this is the lottery hit.",
                 )
 
@@ -1545,6 +1557,78 @@ def device_summary(s, elec=None):
 # on find IS Pro-gated (rides the existing alert pipeline) but the
 # on-screen confetti fires for all users.
 
+# Per-device solved-block counters, persisted across restarts.
+#
+# Without this, detection only works while the app happens to be running: the
+# in-memory baseline starts empty every launch and latches whatever the device
+# currently reports, so a block found while Baller was closed is silently
+# absorbed into the baseline and never surfaces. That is not hypothetical —
+# nerdaxe_002 solved a DigiByte block during a 12.6-hour window when the app
+# was down, and it was lost exactly this way.
+#
+# Miners run 24/7; the desktop app does not. So the counter has to outlive the
+# process. On startup each device seeds its baseline from here instead of from
+# whatever the device says right now, and a higher reading means a block landed
+# while we weren't watching.
+#
+# Keyed by IP, matching the rest of `state`. If a device's IP changes (DHCP),
+# its stored counter no longer matches and it re-baselines silently — a missed
+# celebration, never a false one, which is the right way for this to fail.
+BLOCK_COUNTERS_PATH = os.path.join(_DATA_DIR, "block_counters.json")
+_block_counters_lock = threading.Lock()
+_block_counters_cache: dict | None = None
+
+
+def _block_counters_load() -> dict:
+    """Lazy-load the persisted {ip: count} map. Missing/corrupt file → {}."""
+    global _block_counters_cache
+    if _block_counters_cache is not None:
+        return _block_counters_cache
+    with _block_counters_lock:
+        if _block_counters_cache is not None:
+            return _block_counters_cache
+        _block_counters_cache = {}
+        if os.path.exists(BLOCK_COUNTERS_PATH):
+            try:
+                with open(BLOCK_COUNTERS_PATH, "r") as f:
+                    data = json.load(f)
+                for ip, val in (data.get("counters") or {}).items():
+                    try:
+                        _block_counters_cache[str(ip)] = int(val)
+                    except (TypeError, ValueError):
+                        continue
+            except (json.JSONDecodeError, OSError):
+                # Losing this file costs one celebration at worst; start clean
+                # rather than refusing to poll.
+                _block_counters_cache = {}
+        return _block_counters_cache
+
+
+def _block_counters_get(ip: str):
+    """Last counter value we persisted for this device, or None if unseen."""
+    return _block_counters_load().get(str(ip))
+
+
+def _block_counters_set(ip: str, count: int) -> None:
+    """Persist a device's counter. No-op when unchanged — this is called on
+    every poll (every 5s per device) and the value moves perhaps twice a year,
+    so writing unconditionally would be pointless disk churn."""
+    if count is None:
+        return
+    with _block_counters_lock:
+        counters = _block_counters_load()
+        if counters.get(str(ip)) == int(count):
+            return
+        counters[str(ip)] = int(count)
+        tmp = BLOCK_COUNTERS_PATH + ".tmp"
+        try:
+            with open(tmp, "w") as f:
+                json.dump({"counters": counters}, f, indent=2)
+            os.replace(tmp, BLOCK_COUNTERS_PATH)
+        except OSError as e:
+            print(f"[block-counters] save failed: {e}", file=sys.stderr)
+
+
 BLOCK_FINDS_PATH = os.path.join(_DATA_DIR, "block_finds.json")
 # RLock (reentrant), NOT plain Lock — _block_finds_pending / _recent /
 # _record / _ack all acquire this lock and then call _block_finds_load()
@@ -1677,7 +1761,7 @@ def _fleet_block_height(chain_id):
 
 
 def _block_finds_record(ip: str, label: str, latest: dict, chain_id: str,
-                        height_fallback: int = 0) -> dict:
+                        height_fallback: int = 0, while_away: bool = False) -> dict:
     """Append a new block-find record to the persistent list. Returns the
     record (with the id assigned) so callers can attach it to the device
     event log and/or fire downstream notifications. Idempotent on its own
@@ -1701,6 +1785,11 @@ def _block_finds_record(ip: str, label: str, latest: dict, chain_id: str,
         "best_diff": str(latest.get("bestDiff") or "0"),
         "best_session_diff": str(latest.get("bestSessionDiff") or "0"),
         "found_at": int(time.time()),
+        # True when the counter had already moved by our first poll — i.e. the
+        # block landed while Baller wasn't running, so `found_at` is when we
+        # NOTICED, not when it happened. The UI says so rather than implying
+        # it just occurred.
+        "while_away": bool(while_away),
         "acknowledged": False,
     }
     with _block_finds_lock:
