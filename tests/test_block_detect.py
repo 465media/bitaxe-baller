@@ -52,6 +52,51 @@ TRANSITION_FIXTURES = [
 ]
 
 
+# The persistence layer is what makes a find survive the app being closed:
+# seed from disk, not from whatever the device reports at launch.
+def check_persistence(failures):
+    import json, tempfile, os
+    import app
+
+    with tempfile.TemporaryDirectory() as d:
+        app.BLOCK_COUNTERS_PATH = os.path.join(d, "block_counters.json")
+        app._block_counters_cache = None
+
+        # Unseen device -> None (so the first-ever run baselines, never fires).
+        if app._block_counters_get("10.0.0.1") is not None:
+            failures.append("  FAIL  persistence: unseen device should be None")
+
+        app._block_counters_set("10.0.0.1", 2)
+        if app._block_counters_get("10.0.0.1") != 2:
+            failures.append("  FAIL  persistence: value not stored")
+
+        # Survives a "restart" — the whole point.
+        app._block_counters_cache = None
+        if app._block_counters_get("10.0.0.1") != 2:
+            failures.append("  FAIL  persistence: value did not survive reload")
+
+        # The scenario that lost a real block: app closed at 2, reopened at 3.
+        prev = app._block_counters_get("10.0.0.1")
+        _, delta = app._block_find_transition(prev, 3)
+        if delta != 1:
+            failures.append(f"  FAIL  persistence: closed-at-2 reopened-at-3 gave delta {delta}, expected 1")
+
+        # Unchanged value must not rewrite the file (called every 5s per device).
+        app._block_counters_set("10.0.0.1", 3)
+        before = os.path.getmtime(app.BLOCK_COUNTERS_PATH)
+        app._block_counters_set("10.0.0.1", 3)
+        if os.path.getmtime(app.BLOCK_COUNTERS_PATH) != before:
+            failures.append("  FAIL  persistence: rewrote file for an unchanged value")
+
+        # Corrupt file must not wedge polling.
+        with open(app.BLOCK_COUNTERS_PATH, "w") as f:
+            f.write("{not json")
+        app._block_counters_cache = None
+        if app._block_counters_get("10.0.0.1") is not None:
+            failures.append("  FAIL  persistence: corrupt file should read as empty")
+    return 5
+
+
 def main() -> int:
     failures = []
 
@@ -68,7 +113,9 @@ def main() -> int:
                 f"got {(new_prev, delta)!r}, expected {(exp_prev, exp_delta)!r}"
             )
 
-    total = len(COUNT_FIXTURES) + len(TRANSITION_FIXTURES)
+    extra = check_persistence(failures)
+
+    total = len(COUNT_FIXTURES) + len(TRANSITION_FIXTURES) + extra
     print(f"block detection: {total - len(failures)} / {total} pass")
     for f in failures:
         print(f)

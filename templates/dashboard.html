@@ -1398,10 +1398,16 @@ setInterval(checkFirmware, 30 * 60 * 1000);
       : '';
     detail.innerHTML = `<strong>${escapeHtml(find.device_label || find.device_ip)}</strong> just solved a <strong>${escapeHtml(find.chain_name)}</strong> block${heightStr}.`;
 
+    // found_at is when we RECORDED the find. For a block that landed while
+    // Baller was closed that's the moment we noticed, not the moment it
+    // happened — so label it honestly rather than implying it just occurred.
     const when = find.found_at
       ? new Date(find.found_at * 1000).toLocaleString()
       : '';
-    sub.innerHTML = `Best share difficulty <strong>${escapeHtml(find.best_diff)}</strong>${when ? ' · ' + escapeHtml(when) : ''} · check your wallet — this is the lottery hit.`;
+    const stamp = when
+      ? ' · ' + (find.while_away ? 'found while Baller was closed, detected ' : '') + when
+      : '';
+    sub.innerHTML = `Best share difficulty <strong>${escapeHtml(find.best_diff)}</strong>${stamp ? escapeHtml(stamp) : ''} · check your wallet — this is the lottery hit.`;
 
     if (pendingCount > 1) {
       stack.hidden = false;
