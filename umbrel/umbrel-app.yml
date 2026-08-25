@@ -23,7 +23,7 @@ category: bitcoin
 # manifest fixes) can bump the patch component independently — the image
 # is pinned by digest, so the underlying app code stays the same. Next
 # aligned release across all platforms resets this.
-version: "1.21.3"
+version: "1.21.4"
 
 port: 13700
 description: >-
@@ -69,6 +69,18 @@ gallery:
   - https://bitaxeballer.com/img/screenshots/scan.jpg
 
 releaseNotes: >-
+  v1.21.4 — Block finds are no longer missed while Baller is closed. Fixed: a block
+  solved while Baller wasn't running went unnoticed. Your miners hash 24/7; the app
+  doesn't. Baller worked out "did I find a block?" by comparing against a count it
+  forgot every time it closed — so a block found overnight, or while the app was shut,
+  was quietly absorbed and never celebrated. It now remembers each miner's count between
+  sessions and tells you on the next launch, labelled *found while Baller was closed* so
+  the timestamp isn't mistaken for when it actually happened. This is real, not
+  theoretical: it cost us a genuine DigiByte block. Fresh installs still won't fire for
+  blocks you found before installing Baller, and a miner that's been reset or reflashed
+  re-baselines quietly instead of celebrating an old block twice.
+
+
   v1.21.3 — Support for AxeOS v2.15.0 firmware updates. Fixed: AxeOS v2.15.0 couldn't be
   installed from Baller. Starting with v2.15.0, AxeOS bundles its web interface into the
   main firmware file instead of shipping it separately. Baller still expected the old
