@@ -38,6 +38,16 @@ This doc is the source of truth as features get scoped, designed, or implemented
 
 ---
 
+## Built, awaiting release
+
+### Card drag-to-reorder
+- *(Nate request, 2026-08-27.)* Drag device cards on the home dashboard into whatever order you want, within each coin section. Grip handle on every card, next to the bulk-tuning checkbox; Pointer Events (not HTML5 drag-and-drop, so it works on touch too).
+- `POST /api/devices/reorder` persists the order to `config.json` — Pro-gated write, but the order itself isn't tied to license state, so it doesn't revert if Pro lapses.
+- **Mobile lines up for free.** The iOS/Android app renders `/api/devices` straight through with no client-side sort, so a Pro user's custom order shows up on their phone automatically over the relay — no mobile app update needed.
+- Built + verified on branch `claude/card-drag-drop-arrange-d1e223`. Not yet merged to `main` or tagged in a release.
+
+---
+
 ## Still in the v1.0 Pro launch list (not yet shipped)
 
 ### Auto-updates (in-place / "Chrome-style")

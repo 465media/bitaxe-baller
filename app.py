@@ -4552,6 +4552,58 @@ def api_device_chain():
     return jsonify({"ok": True, "chain": chain or "auto"})
 
 
+@app.route("/api/devices/reorder", methods=["POST"])
+def api_devices_reorder():
+    """Persist a custom card order for the home dashboard (Pro). Body: {order:
+    [ip, ip, ...]}. Order only needs to list the IPs the user actually dragged;
+    unknown/duplicate IPs are ignored and any tracked device missing from the
+    list keeps its existing relative position, appended after the given ones —
+    so a stale order (e.g. sent right after another device was added/removed)
+    degrades gracefully instead of losing devices.
+
+    Free users get a 403 — the drag handle is locked client-side too, but the
+    server is the actual gate. The order lives in config.json regardless of
+    license state, so it doesn't disappear if Pro lapses."""
+    if not is_pro_active():
+        return jsonify({"error": "Card reordering requires Pro"}), 403
+
+    body = request.get_json(force=True)
+    order = body.get("order")
+    if not isinstance(order, list) or not order:
+        return jsonify({"error": "order (non-empty list of ips) required"}), 400
+
+    with config_lock:
+        cfg = load_config()
+        by_ip = {d["ip"]: d for d in cfg["devices"]}
+        seen = set()
+        new_devices = []
+        for ip in order:
+            d = by_ip.get(ip)
+            if d is None or ip in seen:
+                continue
+            seen.add(ip)
+            new_devices.append(d)
+        # Append any tracked devices the client didn't mention, preserving
+        # their prior relative order.
+        for d in cfg["devices"]:
+            if d["ip"] not in seen:
+                new_devices.append(d)
+        cfg["devices"] = new_devices
+        save_config(cfg)
+        new_order = [d["ip"] for d in new_devices]
+
+    with state_lock:
+        state_copy = {ip: state[ip] for ip in new_order if ip in state}
+        # Any state entries not in config (shouldn't normally happen) stay put.
+        for ip, s in state.items():
+            if ip not in state_copy:
+                state_copy[ip] = s
+        state.clear()
+        state.update(state_copy)
+
+    return jsonify({"ok": True, "order": new_order})
+
+
 @app.route("/api/devices/tune", methods=["POST"])
 def api_device_tune():
     """Apply settings (frequency, coreVoltage, fanspeed, autofanspeed) to a device."""

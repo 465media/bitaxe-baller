@@ -1870,8 +1870,8 @@
      ===================================================================== */
   /* Anchor card so the checkbox can be absolutely positioned in its corner. */
   .device.compact { position: relative; }
-  /* Make room on the left of the head row for the 16px checkbox + gap. */
-  .device.compact .compact-head { padding-left: 32px; }
+  /* Make room on the left of the head row for the checkbox + drag handle. */
+  .device.compact .compact-head { padding-left: 52px; }
 
   /* Remove-device × button. Top-right of offline cards. Only emitted for
      offline devices in renderCompactDevice — online cards rely on the
@@ -1934,6 +1934,62 @@
     opacity: 0.5;
   }
   .bulk-checkbox.locked:hover { border-color: var(--warn); opacity: 0.85; }
+
+  /* =====================================================================
+     Card drag-to-reorder (Pro) — per-card grip handle, reordered live via
+     Pointer Events (see the "Card drag-to-reorder" JS block in
+     dashboard.html). Positioned next to the bulk-checkbox, sharing the same
+     top row of the card.
+     ===================================================================== */
+  .drag-handle {
+    position: absolute;
+    top: 8px;
+    left: 30px;
+    /* Same footprint as .bulk-checkbox right next to it, so the two read as
+       a matched pair instead of the handle looking like an afterthought. */
+    width: 16px;
+    height: 16px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 19px;
+    line-height: 1;
+    color: var(--dim);
+    cursor: grab;
+    z-index: 5;
+    user-select: none;
+    touch-action: none; /* let us own the gesture instead of the browser (scroll) */
+    transition: color 0.15s;
+  }
+  .drag-handle:hover { color: var(--accent); }
+  .drag-handle.locked {
+    opacity: 0.5;
+    cursor: pointer;
+  }
+  .drag-handle.locked:hover { color: var(--warn); opacity: 0.85; }
+
+  /* The card currently being dragged — pulled out of grid flow and following
+     the pointer via inline position:fixed set by the JS. */
+  .device-link.dragging {
+    cursor: grabbing;
+  }
+  .device-link.dragging .device.compact {
+    box-shadow: 0 10px 28px rgba(0,0,0,0.35);
+    border-color: var(--accent);
+  }
+
+  /* Empty slot left behind at the drop target while dragging. */
+  .drag-placeholder {
+    border: 1.5px dashed var(--accent-dim);
+    background: var(--accent-soft);
+    box-shadow: none;
+  }
+
+  /* While a drag is in flight, calm down the other cards' hover animation so
+     it doesn't fight with the live reflow as the placeholder moves around. */
+  #devices.drag-active .device.compact:hover {
+    transform: none;
+  }
 
   /* Card visual when included in the selection. */
   .device.compact.bulk-selected {

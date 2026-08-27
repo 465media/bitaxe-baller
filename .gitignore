@@ -9,6 +9,7 @@ logs/
 history.db
 history.db-wal
 history.db-shm
+block_counters.json
 .DS_Store
 .env
 .idea/
