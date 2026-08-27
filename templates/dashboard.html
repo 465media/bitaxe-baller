@@ -339,11 +339,13 @@ function renderCompactDevice(d) {
   const href = `/device/${ip}`;
   const selected = bulkSelection.has(ip);
   const cb = `<span class="bulk-checkbox ${selected ? 'checked' : ''} ${isProActive ? '' : 'locked'}" data-ip="${ip}" data-tip="${isProActive ? 'Select for bulk tuning. Click again to deselect.' : 'Pro feature — click to learn more.'}" role="checkbox" aria-checked="${selected ? 'true' : 'false'}" tabindex="0"></span>`;
+  const dragHandle = `<span class="drag-handle ${isProActive ? '' : 'locked'}" data-ip="${ip}" data-tip="${isProActive ? 'Drag to reorder cards within this coin section.' : 'Pro feature — drag to arrange your cards. Click to learn more.'}" aria-label="Reorder">⣿</span>`;
   if (!d.online) {
     return `
       <a class="device-link" href="${href}">
-        <div class="device compact offline ${selected ? 'bulk-selected' : ''}" data-ip="${ip}">
+        <div class="device compact offline ${selected ? 'bulk-selected' : ''}" data-ip="${ip}" data-chain="${escapeHtml(d.chain || 'btc')}">
           ${cb}
+          ${dragHandle}
           <button class="device-remove" data-ip="${ip}" data-tip="Remove this device from the dashboard. Useful when you've replaced a Bitaxe, changed IPs, or end up with a stale duplicate." aria-label="Remove device">×</button>
           <div class="compact-head">
             <div class="left">
@@ -373,8 +375,9 @@ function renderCompactDevice(d) {
 
   return `
     <a class="device-link" href="${href}" data-tip="Click to open the full detail page: charts, all metrics, tuning, fan, pool config, and event log.">
-      <div class="device compact ${sevClass} ${selected ? 'bulk-selected' : ''}" data-ip="${ip}">
+      <div class="device compact ${sevClass} ${selected ? 'bulk-selected' : ''}" data-ip="${ip}" data-chain="${escapeHtml(d.chain || 'btc')}">
         ${cb}
+        ${dragHandle}
         <div class="compact-head">
           <div class="left">
             <span class="dot"></span>
@@ -831,6 +834,167 @@ document.addEventListener('click', async (e) => {
   }
 });
 
+// ----- Card drag-to-reorder (Pro) -----
+// Pointer Events (not HTML5 drag-and-drop, which doesn't work on iOS/Android
+// Safari/Chrome or in the Capacitor mobile apps — this dashboard is one of
+// several clients on the same relay, and the reorder should feel the same
+// on a phone as on desktop). Reordering is scoped to within a single coin
+// section: a device's chain comes from its pool, not its card position, so
+// dragging a card across a chain boundary wouldn't mean anything.
+//
+// `_cardDragActive` is read by poll() (above) to skip the 5s grid rebuild
+// while a drag is in flight — otherwise the incoming re-render would yank
+// the card out from under the pointer mid-drag.
+let _cardDragActive = false;
+let _dragState = null;
+
+function _dragGridItem(cardDiv) {
+  return (cardDiv && cardDiv.closest('.device-link')) || cardDiv;
+}
+
+// Grid items (the <a> wrappers) sharing a chain with the dragged card,
+// excluding the dragged card itself and the placeholder.
+function _dragSiblings(chain, excludeItem, placeholder) {
+  return Array.from(document.querySelectorAll(`.device.compact[data-chain="${CSS.escape(chain)}"]`))
+    .map(_dragGridItem)
+    .filter(el => el && el !== excludeItem && el !== placeholder);
+}
+
+function _dragStart(handle, e) {
+  const cardDiv = handle.closest('.device.compact');
+  if (!cardDiv) return;
+  const link = _dragGridItem(cardDiv);
+  const rect = link.getBoundingClientRect();
+  _dragState = {
+    ip: cardDiv.getAttribute('data-ip'),
+    chain: cardDiv.getAttribute('data-chain') || 'btc',
+    link,
+    placeholder: null,
+    startX: e.clientX,
+    startY: e.clientY,
+    offsetX: e.clientX - rect.left,
+    offsetY: e.clientY - rect.top,
+    width: rect.width,
+    height: rect.height,
+    moved: false,
+    lastX: e.clientX,
+    lastY: e.clientY,
+  };
+  try { handle.setPointerCapture(e.pointerId); } catch (err) { /* ignore */ }
+}
+
+function _dragActivate() {
+  const s = _dragState;
+  if (!s || s.moved) return;
+  s.moved = true;
+  _cardDragActive = true;
+
+  const placeholder = document.createElement('div');
+  placeholder.className = 'device compact drag-placeholder';
+  placeholder.style.height = s.height + 'px';
+  s.link.parentNode.insertBefore(placeholder, s.link);
+  s.placeholder = placeholder;
+
+  s.link.classList.add('dragging');
+  Object.assign(s.link.style, {
+    position: 'fixed',
+    left: (s.lastX - s.offsetX) + 'px',
+    top: (s.lastY - s.offsetY) + 'px',
+    width: s.width + 'px',
+    zIndex: 1000,
+    pointerEvents: 'none',
+  });
+
+  document.getElementById('devices')?.classList.add('drag-active');
+}
+
+function _dragMove(x, y) {
+  const s = _dragState;
+  if (!s) return;
+  s.lastX = x; s.lastY = y;
+  if (!s.moved) {
+    if (Math.abs(x - s.startX) < 4 && Math.abs(y - s.startY) < 4) return;
+    _dragActivate();
+  }
+  s.link.style.left = (x - s.offsetX) + 'px';
+  s.link.style.top = (y - s.offsetY) + 'px';
+
+  const siblings = _dragSiblings(s.chain, s.link, s.placeholder);
+  if (!siblings.length) return;
+  let nearest = null, bestDist = Infinity;
+  for (const el of siblings) {
+    const r = el.getBoundingClientRect();
+    const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+    const dist = (x - cx) ** 2 + (y - cy) ** 2;
+    if (dist < bestDist) { bestDist = dist; nearest = el; }
+  }
+  if (!nearest) return;
+  const r = nearest.getBoundingClientRect();
+  const sameRow = y >= r.top && y <= r.bottom;
+  const insertAfter = sameRow ? (x > r.left + r.width / 2) : (y > r.top + r.height / 2);
+  const parent = nearest.parentNode;
+  parent.insertBefore(s.placeholder, insertAfter ? nearest.nextSibling : nearest);
+}
+
+async function _dragEnd() {
+  const s = _dragState;
+  _dragState = null;
+  if (!s) return;
+  if (!s.moved) return; // a plain tap/click on the handle — no reorder happened
+
+  // Drop the dragged link into the placeholder's slot, then clear the
+  // inline drag styles so it snaps back into normal grid flow there.
+  s.placeholder.parentNode.insertBefore(s.link, s.placeholder);
+  s.placeholder.remove();
+  s.link.classList.remove('dragging');
+  Object.assign(s.link.style, {
+    position: '', left: '', top: '', width: '', zIndex: '', pointerEvents: '',
+  });
+  document.getElementById('devices')?.classList.remove('drag-active');
+  _cardDragActive = false;
+
+  const order = Array.from(document.querySelectorAll('#devices .device.compact')).map(el => el.getAttribute('data-ip'));
+  try {
+    await api('/api/devices/reorder', 'POST', { order });
+  } catch (err) {
+    if (err.message && /pro/i.test(err.message)) {
+      toast('Card reordering requires Pro', 'error');
+      if (typeof openProModal === 'function') openProModal();
+    } else {
+      toast('Reorder failed: ' + (err.message || err), 'error');
+    }
+    poll(); // snap back to the server's actual order
+  }
+}
+
+document.addEventListener('pointerdown', (e) => {
+  const handle = e.target.closest && e.target.closest('.drag-handle');
+  if (!handle) return;
+  e.preventDefault();
+  if (!isProActive) return; // the click handler below opens the Pro modal
+  _dragStart(handle, e);
+});
+
+document.addEventListener('pointermove', (e) => {
+  if (!_dragState) return;
+  e.preventDefault();
+  _dragMove(e.clientX, e.clientY);
+});
+
+document.addEventListener('pointerup', _dragEnd);
+document.addEventListener('pointercancel', _dragEnd);
+
+// Suppress the card's own navigation when the handle is tapped/clicked —
+// whether that click ends a real drag or is just a plain tap. Mirrors the
+// bulk-checkbox click handler above.
+document.addEventListener('click', (e) => {
+  const handle = e.target.closest && e.target.closest('.drag-handle');
+  if (!handle) return;
+  e.preventDefault();
+  e.stopPropagation();
+  if (!isProActive && typeof openProModal === 'function') openProModal();
+});
+
 // ----- Electricity rate editor (free feature) -----
 // Small modal to set the per-kWh rate + currency used for the cost estimates.
 function openElecModal() {
@@ -1157,16 +1321,22 @@ async function poll() {
     renderSummary(devices);
 
     const main = document.getElementById('devices');
-    if (devices.length === 0) {
-      main.innerHTML = `
-        <div class="empty">
-          <div class="big">no devices yet</div>
-          <div>add a Bitaxe by entering its IP address above</div>
-          <div class="arrow">↑ enter the IP shown on its OLED display</div>
-        </div>
-      `;
-    } else {
-      main.innerHTML = renderDeviceGrid(devices);
+    // A card drag is in progress — skip the grid DOM replace. Rebuilding it
+    // mid-drag would yank the element out from under the pointer and reset
+    // the optimistic order back to whatever the server last had. The drag
+    // handlers apply their own order once the drop lands.
+    if (!_cardDragActive) {
+      if (devices.length === 0) {
+        main.innerHTML = `
+          <div class="empty">
+            <div class="big">no devices yet</div>
+            <div>add a Bitaxe by entering its IP address above</div>
+            <div class="arrow">↑ enter the IP shown on its OLED display</div>
+          </div>
+        `;
+      } else {
+        main.innerHTML = renderDeviceGrid(devices);
+      }
     }
 
     renderFleetLeaderboard(devices);
