@@ -48,7 +48,7 @@ services:
       - "host.docker.internal:host-gateway"
 
   web:
-    image: ghcr.io/465media/bitaxe-baller:latest@sha256:e74bfddb6ddc7488a06ce103e4d3143f107f400db424a2cd975214e5d494fb7a
+    image: ghcr.io/465media/bitaxe-baller:latest@sha256:1e17b15287a8d0393520411a53f27c0b1f94c37a0240f3cb7469303c4b84ebee
     restart: on-failure
     stop_grace_period: 15s
     network_mode: host
