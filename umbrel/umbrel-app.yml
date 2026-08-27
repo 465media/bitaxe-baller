@@ -23,7 +23,7 @@ category: bitcoin
 # manifest fixes) can bump the patch component independently — the image
 # is pinned by digest, so the underlying app code stays the same. Next
 # aligned release across all platforms resets this.
-version: "1.21.4"
+version: "1.22.0"
 
 port: 13700
 description: >-
@@ -69,6 +69,17 @@ gallery:
   - https://bitaxeballer.com/img/screenshots/scan.jpg
 
 releaseNotes: >-
+  v1.22.0 — Drag your device cards into any order (Pro). New (Pro): drag-to-reorder
+  cards. Every device card on the home dashboard now has a grip handle next to the bulk-
+  tuning checkbox — drag it to arrange your fleet however makes sense to you: favorite
+  miner up top, a problem device right where you'll spot it. Reordering is scoped to one
+  coin section at a time, since a device's section comes from which pool it's mining to,
+  not from where its card sits. Your custom order shows up on the iOS/Android app
+  automatically — nothing to set up there, the phone app just renders whatever order the
+  desktop sends it. Free tier sees the same grip handle, locked, with a note on what
+  upgrading unlocks.
+
+
   v1.21.4 — Block finds are no longer missed while Baller is closed. Fixed: a block
   solved while Baller wasn't running went unnoticed. Your miners hash 24/7; the app
   doesn't. Baller worked out "did I find a block?" by comparing against a count it
