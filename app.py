@@ -31,7 +31,7 @@ import relay_client
 # Info.plist/EXE version and the dashboard footer template should both
 # match this string. Update bump checklist: APP_VERSION here, the spec's
 # version="..." entries, and the v1.X.Y string in dashboard.html + device.html.
-APP_VERSION = "1.22.0"
+APP_VERSION = "1.23.0"
 
 
 # Test-mode override: pretend to be an older version so the auto-update flow
@@ -155,10 +155,14 @@ poll_stop_flag = threading.Event()
 
 
 def default_config():
+    # `port`: None → auto (prefer 80, fall back to 5050). An integer pins a
+    # specific listen port via the in-app Advanced setting. The PORT env var,
+    # when set, overrides this (see _pick_port).
     return {
         "devices": [],
         "poll_interval": DEFAULT_POLL,
         "electricity": {"rate": DEFAULT_ELEC_RATE, "currency": DEFAULT_CURRENCY},
+        "port": None,
     }
 
 
@@ -976,6 +980,10 @@ _BLOCK_REWARDS = {
 #   siblings are already handled (bch.* by the BCH needle, btc.* by the
 #   BTC fall-through).
 _CHAIN_PATTERNS = [
+    # quai first: its needle is unambiguous (no other coin has "quai" in a
+    # hostname) and it must win over multi-coin hosts also listed below —
+    # e.g. quai.viabtc.com would otherwise match viabtc → xec.
+    ("quai", ("quai", "qu.ai")),
     ("xec", ("xec.", "-xec.", "ecash", "bcha", "xeggex", "viabtc")),
     ("bsv", ("bsv.", "-bsv.", "bitcoin-sv", "bitcoin sv")),
     ("dgb", ("dgb.", "-dgb.", "digibyte", "digi.",
@@ -1041,6 +1049,15 @@ def _infer_chain(stratum_url, stratum_port=0, stratum_user=""):
     # is, and 'D' vs 'd' is the whole signal).
     if _is_legacy_dgb_address(user_raw.split(".", 1)[0]):
         return "dgb"
+    # Quai is EVM-based: payout addresses are 0x + 40 hex, visually identical to
+    # an Ethereum address (Quai shards them internally, but that's invisible in
+    # the format). Generically '0x' is ambiguous across all EVM chains — BUT no
+    # other coin Baller supports uses a 0x address (they're all SHA-256 with
+    # base58 / bech32 / CashAddr payout formats). So within this app's SHA-256
+    # universe a 0x worker is a reliable Quai tell, and it catches Quai even on a
+    # generic/multi-coin pool or private node whose URL doesn't contain "quai".
+    if user.startswith("0x"):
+        return "quai"
     if not stratum_url:
         return "btc"
     u = str(stratum_url).lower()
@@ -1085,6 +1102,10 @@ _CHAIN_INFERENCE_FIXTURES = [
     ("viabtc XEC",             "xec.viabtc.com",          3333,  "user.worker",            "xec"),
     ("bsv pool",               "stratum.bsv.example",     3333,  "1abc...x.worker",        "bsv"),
     ("nmc pool",               "namecoin.example",        3333,  "N...x.worker",           "nmc"),
+    ("kryptex Quai SHA",       "quai-sha256.kryptex.com", 8888,  "user.NerdQAxe",          "quai"),
+    ("2miners Quai SHA",       "sha.quai.2miners.com",    6060,  "0xabc...worker",         "quai"),
+    ("quai over viabtc host",  "quai.viabtc.com",         3333,  "user.worker",            "quai"),
+    ("quai 0x addr, plain URL", "generic-solo.example",   3333,  "0xAbC123...def.NerdQAxe", "quai"),
     ("unmatched → BTC",        "weirdpool.example",       3333,  "bc1q...x.worker",        "btc"),
 ]
 
@@ -2296,8 +2317,11 @@ def _request_is_from_host() -> bool:
 
 @app.route("/")
 def index():
+    is_host = _request_is_from_host()
     return render_template("dashboard.html", presets=PRESETS, bounds=BOUNDS,
-                           show_logs_link=_request_is_from_host())
+                           show_logs_link=is_host,
+                           show_port_setting=is_host and not port_is_env_locked(),
+                           current_port=PORT)
 
 
 @app.route("/healthz")
@@ -2570,6 +2594,47 @@ def api_electricity_set():
         cfg["electricity"] = {"rate": round(rate, 4), "currency": currency}
         save_config(cfg)
     return jsonify({"ok": True, "rate": round(rate, 4), "currency": currency})
+
+
+@app.route("/api/config/port", methods=["POST"])
+def api_config_port():
+    """Set (or clear) the preferred listen port, persisted to config.json.
+    Takes effect on the NEXT launch — the server is already bound to the
+    current port for this session. Body: {"port": <int>|null}; null restores
+    the automatic 80→5050 choice.
+
+    Host-only: a remote/phone session shouldn't be able to move the desktop's
+    port out from under the person at the machine (and possibly lock them out).
+    The UI already hides the control off-host; this is the backstop."""
+    if not _request_is_from_host():
+        return jsonify({"ok": False, "error": "Port can only be changed from the "
+                                               "machine running Bitaxe Baller."}), 403
+    if port_is_env_locked():
+        return jsonify({"ok": False, "error": "Port is pinned by the PORT environment "
+                                              "variable and can't be changed here."}), 409
+
+    body = request.get_json(silent=True) or {}
+    raw = body.get("port")
+
+    if raw is None or raw == "":
+        new_port = None
+    else:
+        try:
+            new_port = _valid_port(raw)
+        except (ValueError, TypeError):
+            return jsonify({"ok": False, "error": "Port must be a whole number "
+                                                  "between 1 and 65535."}), 400
+
+    cfg = load_config()
+    cfg["port"] = new_port
+    save_config(cfg)
+
+    if new_port is None:
+        msg = "Port reset to automatic (80, or 5050 if unavailable). Restart to apply."
+    else:
+        msg = f"Port set to {new_port}. Restart Bitaxe Baller to apply."
+    return jsonify({"ok": True, "port": new_port, "current_port": PORT,
+                    "restart_required": new_port != PORT, "message": msg})
 
 
 @app.route("/api/logs/open", methods=["POST"])
@@ -4512,7 +4577,13 @@ def api_device_rename():
 
 # Chains a user can manually pin a device to. Matches the chain_name map +
 # the stats fetchers; auto-detection remains the default.
-_VALID_CHAINS = {"btc", "bch", "bsv", "xec", "dgb", "nmc"}
+# quai is SHA-256-mineable (Quai's "Quai-SHA" merge-mined workshares — a BM1370
+# hashes it natively), so it's a valid grouping/label + auto-detect target. It has
+# no entry in _BLOCK_REWARDS / _CHAIN_FETCHERS: Quai's SHA difficulty and per-share
+# reward don't map onto the Bitcoin-style solo-block-odds model and there's no clean
+# free difficulty feed, so the block-probability panel just hides for Quai devices
+# (_solo_block_payload → None). Grouping and the QUAI pool tag still work.
+_VALID_CHAINS = {"btc", "bch", "bsv", "xec", "dgb", "nmc", "quai"}
 
 
 @app.route("/api/devices/chain", methods=["POST"])
@@ -5493,15 +5564,51 @@ def _can_bind(port):
         return False
 
 
+def _valid_port(p):
+    """Coerce p to an int and confirm it's a usable TCP port. Raises
+    ValueError/TypeError on anything out of the 1-65535 range."""
+    p = int(p)
+    if not (1 <= p <= 65535):
+        raise ValueError(f"port {p} out of range 1-65535")
+    return p
+
+
 def _pick_port():
-    """If PORT env var is set, honor it. Otherwise prefer 80 for clean URLs
-    (no :port in the address bar) and fall back to 5050 when port 80 isn't
-    available — typically because the app isn't running as root."""
+    """Resolve the listen port, in precedence order:
+
+      1. PORT env var — highest, so container/self-host deploys (Umbrel sets
+         PORT=13701) and `PORT=8080 python app.py` always win.
+      2. `port` in config.json — the in-app Advanced setting. The server binds
+         once at startup, so a change here takes effect on next launch.
+      3. Auto: prefer 80 for clean URLs (no :port in the address bar), falling
+         back to 5050 when 80 isn't bindable — typically because the app isn't
+         running as root.
+
+    An invalid value at any tier is ignored rather than fatal, so a bad env var
+    or a hand-edited config can't wedge startup."""
     if "PORT" in os.environ:
-        return int(os.environ["PORT"])
+        try:
+            return _valid_port(os.environ["PORT"])
+        except (ValueError, TypeError):
+            print(f"[port] ignoring invalid PORT env var {os.environ['PORT']!r}")
+    try:
+        cfg_port = load_config().get("port")
+    except Exception:
+        cfg_port = None
+    if cfg_port is not None:
+        try:
+            return _valid_port(cfg_port)
+        except (ValueError, TypeError):
+            print(f"[port] ignoring invalid port {cfg_port!r} in config.json")
     if _can_bind(80):
         return 80
     return 5050
+
+
+def port_is_env_locked():
+    """True when the PORT env var pins the port, making the in-app setting a
+    no-op. Umbrel/Docker are always in this state. The UI reflects it."""
+    return "PORT" in os.environ
 
 
 PORT = _pick_port()

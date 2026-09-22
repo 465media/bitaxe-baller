@@ -1,6 +1,8 @@
 # Bitaxe Baller
 
-**v1.22.0** — Flask app + browser dashboard for monitoring and tuning Bitaxe Gamma (BM1370) miners on the local network (also monitors NerdQAxe and other AxeOS-fork devices; firmware flashing is Bitaxe-only, fail-closed). Braiins OS mini miners (BMM-101) are supported **monitor-only** via the CGMiner TCP API on :4028 — device config entries carry `"type": "braiins"`, `fetch_braiins()` translates BOSer fields into the AxeOS shape, and all mutating endpoints reject them (`_monitor_only_error`). Two pages: a compact scannable home view, plus a per-device detail page for tuning + pool config. Built-in LAN scanner auto-discovers new miners (AxeOS via HTTP probe, Braiins via :4028 fallback). Inline tooltips throughout. Single shared stylesheet and JS helper file under `static/`. The web app itself has no build step (vanilla JS, no framework) — desktop packaging is a separate PyInstaller pipeline under `build/`.
+**v1.23.0** — Flask app + browser dashboard for monitoring and tuning Bitaxe Gamma (BM1370) miners on the local network (also monitors NerdQAxe and other AxeOS-fork devices; firmware flashing is Bitaxe-only, fail-closed). Braiins OS mini miners (BMM-101) are supported **monitor-only** via the CGMiner TCP API on :4028 — device config entries carry `"type": "braiins"`, `fetch_braiins()` translates BOSer fields into the AxeOS shape, and all mutating endpoints reject them (`_monitor_only_error`). Two pages: a compact scannable home view, plus a per-device detail page for tuning + pool config. Built-in LAN scanner auto-discovers new miners (AxeOS via HTTP probe, Braiins via :4028 fallback). Inline tooltips throughout. Single shared stylesheet and JS helper file under `static/`. The web app itself has no build step (vanilla JS, no framework) — desktop packaging is a separate PyInstaller pipeline under `build/`.
+
+**New in v1.23.0**: (1) **Quai (SHA-256) chain support** — *free*. `quai` joins the chain set for grouping, the device-page chain dropdown and the `QUAI` pool tag. Auto-detect uses two independent signals, either sufficient: a URL needle (`quai` / `qu.ai`, ordered ahead of the viabtc→XEC rule so `quai.viabtc.com` resolves correctly) and a `0x` payout-address prefix — Quai is EVM-style and no other chain Baller supports uses `0x`, so within this app's universe it's unambiguous. Quai deliberately has **no solo-block probability**: `_chain_stats("quai")` has no fetcher, so `_solo_block_payload` returns `None` and `device.html` renders the `NO_BLOCKPROB_CHAINS` notice instead of an empty gap. That map is keyed on known chains only, so a BTC device whose stats haven't warmed yet still falls through to `''` rather than flashing "unavailable". Fixtures live in `_CHAIN_INFERENCE_FIXTURES` (app.py), exercised by `tests/test_chain_inference.py`. (2) **In-app listen-port setting** — *free*. `config.json` → `port` (null = the automatic 80→5050 pick) is editable from a footer control on the home page, via `POST /api/config/port`. Host-only by design: a remote or phone session can't move the desktop's port out from under the person at the machine. `PORT` in the environment still wins and the endpoint 409s rather than pretending. Applies on next launch — the running server is already bound.
 
 **New in v1.20.0** (two features borrowed from community project `joakim-ribier/axeos-dashboard`): (1) **Electricity cost estimation** — *free* feature. A global per-kWh rate + currency symbol (`config.json` → `electricity: {rate, currency}`, default `$0.12`) turns each device's live power draw into an estimated `perDay`/`perMonth` cost, surfaced as a `cost` block in every device summary, a fleet total tile on the home page, a running-cost line on each card, and a stat on the detail page. Rate is edited via a small modal (`POST /api/config/electricity`). (2) **Scheduled pool switching** — *Pro* feature, built on the existing pool-profiles system. A schedule applies a saved pool profile to one or more devices at a chosen local time on chosen weekdays (`config.json` → `pool_schedules`), evaluated inside `poll_loop` (no cron dependency; time-of-day + weekday, once-per-day guard, no missed-fire catch-up). Managed from the device page's pool section.
 
@@ -34,7 +36,7 @@ python app.py                     # port 5050 (no sudo)
 sudo $(which python) app.py       # port 80 (clean URLs, e.g. http://bitaxe-baller.local)
 ```
 
-The app prefers port 80 if it can bind it (yields cleaner URLs since browsers default to 80 for `http://`), and falls back to 5050 when it can't (typical when not running as root). Set `PORT=...` to override and skip the auto-pick.
+Port selection precedence (`_pick_port`): **`PORT` env var → `port` in `config.json` → auto**. Auto prefers 80 if it can bind it (cleaner URLs, browsers default to 80 for `http://`) and falls back to 5050 when it can't (typical when not running as root). The `config.json port` tier is the in-app **Advanced** setting (footer "port NNNN" link on the dashboard, host-only, hidden when `PORT` env pins the port); it's read once at startup so a change needs an app restart. Umbrel/Docker set `PORT` via env, so the env tier keeps them unaffected.
 
 The startup banner prints every URL the dashboard is reachable on:
 - `http://localhost[:port]` — this machine
@@ -70,7 +72,7 @@ config.json                  # device list (gitignored)
 - `POST /api/system/OTA` — flash firmware (`esp-miner.bin`, raw binary upload). **Reboots**; flash **last**. AxeOS ships `www.bin` + `esp-miner.bin` as a matched pair per release.
 - `POST /api/system/pause` / `POST /api/system/resume` — pause / resume mining (e.g. around a flash).
 - `POST /api/system/identify` — blink the device screen/LED to physically locate it.
-- Endpoints verified against AxeOS **v1.22.0**. Bulk firmware-update design: `docs/firmware-bulk-update-spec.md`.
+- Endpoints verified against AxeOS **v1.23.0**. Bulk firmware-update design: `docs/firmware-bulk-update-spec.md`.
 
 ## Internal API (browser → Flask)
 
@@ -84,6 +86,7 @@ config.json                  # device list (gitignored)
 - `POST /api/pool-schedules` — create (**Pro**). Validates the profile exists, time is HH:MM, days ⊆ 0–6, and every ip is a tracked device.
 - `POST /api/pool-schedules/<id>/update` — edit, or enable/disable (enable-only fast path when body is just `{enabled}`). Enabling requires Pro; disabling is always allowed.
 - `POST /api/pool-schedules/<id>/delete` — remove a schedule (always allowed). Schedules fire from `_run_pool_schedules()` inside `poll_loop`; monitor-only (Braiins) targets are skipped.
+- `POST /api/config/port` — set/clear the preferred listen port in `config.json` (body `{port: <int>|null}`; null = auto). Host-only (403 otherwise); 409 when `PORT` env pins the port. Takes effect on next launch.
 - `POST /api/devices/{add,remove,rename,tune,preset,restart,reset_session}`
 - `POST /api/devices/reorder` — **Pro.** Persist a custom home-dashboard card order. Body `{order:[ip,...]}`. Rewrites `cfg["devices"]` (and the in-memory `state` dict, whose iteration order drives `/api/devices`) to match; IPs omitted from `order` keep their relative position, appended after the given ones. The write is Pro-gated (403 otherwise) but the saved order itself isn't tied to license state — it persists in `config.json` even if Pro lapses. Drag UI lives in `dashboard.html` (Pointer Events, not HTML5 DnD — needed for iOS/Android/Capacitor), constrained to reordering within one coin section at a time.
 - `POST /api/devices/pool` — body `{ip, stratumURL?, stratumPort?, ..., fallbackStratumURL?, ..., restart?}`. Validates and PATCHes the device, optionally restarts. Empty / missing fields are skipped (worker passwords blank-by-default).
@@ -108,7 +111,7 @@ Bounds are enforced server-side in `api_device_tune` and `api_device_pool`. Neve
 
 ## Environment variables
 
-- `PORT` — explicitly pin a port. Unset → app tries `80` first (clean URL), falls back to `5050` if it can't bind.
+- `PORT` — explicitly pin a port (highest precedence, overrides the `config.json port` setting). Unset → app uses the `config.json port` if set, else tries `80` first (clean URL) and falls back to `5050` if it can't bind.
 - `HOST` (default `0.0.0.0`; set to `127.0.0.1` to keep it local-only — also disables mDNS).
 - `MDNS_ENABLED` (default `1`; set to `0` to skip mDNS publication).
 - `MDNS_NAME` (default `bitaxe-baller`; the `.local` host name to publish).
