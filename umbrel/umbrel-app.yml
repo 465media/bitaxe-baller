@@ -23,7 +23,7 @@ category: bitcoin
 # manifest fixes) can bump the patch component independently — the image
 # is pinned by digest, so the underlying app code stays the same. Next
 # aligned release across all platforms resets this.
-version: "1.22.0"
+version: "1.23.0"
 
 port: 13700
 description: >-

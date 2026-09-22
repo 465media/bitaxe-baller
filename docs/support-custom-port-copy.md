@@ -15,7 +15,7 @@ which is normal when it isn't running as an administrator. If you'd rather
 pin an exact port (for example, port 80 is taken by another service, or you
 want a fixed `:8080`), you have two options.
 
-### Easiest: the in-app setting (v1.20.0+)
+### Easiest: the in-app setting (v1.23.0+)
 
 On the machine running Bitaxe Baller, click the **port NNNN** link in the
 dashboard footer, type the port you want, and **Save** — or click **Auto** to
