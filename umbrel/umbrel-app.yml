@@ -69,6 +69,25 @@ gallery:
   - https://bitaxeballer.com/img/screenshots/scan.jpg
 
 releaseNotes: >-
+  v1.23.0 — Quai mining support + pick your own dashboard port. New: Quai is a first-
+  class chain. Point a miner at a Quai-SHA pool and Baller now recognises it instead of
+  filing it under Bitcoin — its own home-page group, its own QUAI pool tag, and a QUAI
+  option in the device page's chain dropdown if you'd rather set it by hand. Detection
+  works two ways: the pool URL, and the 0x payout address, so it still lands correctly
+  on a generic or private pool whose URL never says "quai". Solo-block odds are
+  deliberately not shown for Quai. Its difficulty and per-share reward don't map onto
+  the Bitcoin block-odds maths, and there's no clean free feed to base them on — so the
+  device page says so plainly rather than quietly leaving a gap where a number should
+  be. New: set the dashboard's port from inside the app. A "port" control in the footer
+  pins the exact port Baller listens on instead of the automatic 80-then-5050 pick, or
+  resets it back to automatic. Useful when something else already owns port 80, or you
+  just want a fixed address to bookmark. Takes effect after you restart the app. The
+  port control only appears on the machine actually running Baller — changing it from
+  your phone or a remote browser is blocked, so nobody can move the port out from under
+  the person sitting at the desk. If you already pin the port with the PORT environment
+  variable, that keeps winning and the app says so. Umbrel and Docker are unaffected.
+
+
   v1.22.0 — Drag your device cards into any order (Pro). New (Pro): drag-to-reorder
   cards. Every device card on the home dashboard now has a grip handle next to the bulk-
   tuning checkbox — drag it to arrange your fleet however makes sense to you: favorite
