@@ -628,8 +628,8 @@ def poll_one(ip, label, device_type=None):
                 # state_lock is held here, which _fleet_block_height requires.
                 rec = _block_finds_record(ip, s["label"], data, chain_id,
                                           height_fallback=_fleet_block_height(chain_id),
-                                          while_away=found_while_away)
-                rec["delta"] = delta  # so the UI can say "+N blocks found"
+                                          while_away=found_while_away,
+                                          delta=delta)
                 log_event(ip, f"🎉 BLOCK FOUND on {rec['chain_name']} (height {rec['block_height']}, diff {rec['best_diff']})")
                 # Block-found is the one alert nobody wants to miss — but DON'T dispatch
                 # it here: _alerts_dispatch does Discord/email HTTP, and running that under
@@ -644,6 +644,17 @@ def poll_one(ip, label, device_type=None):
                     f"Bitaxe {s['label']} {when} {rec['chain_name']} block at height {rec['block_height']}. "
                     f"Difficulty: {rec['best_diff']}. Look at your wallet — this is the lottery hit.",
                 )
+            # One-time lifetime-tally seed from the firmware's own counter, so
+            # blocks solved before Baller was watching still count. Runs after
+            # the record above so a while-away find lands in the ledger (with
+            # its real chain), not in the seed.
+            if cur_block_found is not None:
+                _block_tally_seed(ip, s["label"], data, cur_block_found,
+                                  lambda: s.get("chain_override") or _infer_chain(
+                                      data.get("stratumURL", ""),
+                                      data.get("stratumPort", 0),
+                                      data.get("stratumUser", ""),
+                                  ))
 
             point = {
                 "t": ts,
@@ -1534,6 +1545,7 @@ def device_summary(s, elec=None):
         "autotune": _autotune_summary(s),
         "chain": chain_id,
         "chainOverride": s.get("chain_override") or None,
+        "blocks": _device_blocks_payload(s["ip"], latest),
         "blockProbability": _solo_block_payload(
             latest.get("stratumURL", ""),
             latest.get("stratumPort", 0),
@@ -1657,12 +1669,15 @@ BLOCK_FINDS_PATH = os.path.join(_DATA_DIR, "block_finds.json")
 # on the first request (caught in v1.16.0 within an hour of release).
 _block_finds_lock = threading.RLock()
 _block_finds_cache: list | None = None  # lazy-loaded on first read
+# Lifetime-tally seeds, keyed by device (MAC, else IP): {chain, count, label, at}.
+# Stored in the same file as the finds so the two can never drift apart.
+_block_seeds_cache: dict = {}
 
 
 def _block_finds_load() -> list:
     """Lazy-load + cache the block_finds list from disk. Returns a list of
     dicts; on a fresh install (file missing) returns an empty list."""
-    global _block_finds_cache
+    global _block_finds_cache, _block_seeds_cache
     if _block_finds_cache is not None:
         return _block_finds_cache
     with _block_finds_lock:
@@ -1675,6 +1690,7 @@ def _block_finds_load() -> list:
             with open(BLOCK_FINDS_PATH, "r") as f:
                 data = json.load(f)
             _block_finds_cache = list(data.get("finds", []))
+            _block_seeds_cache = dict(data.get("seeds") or {})
         except (json.JSONDecodeError, OSError):
             # Corrupt file — rare, but losing all block-find history would
             # be devastating, so we move it aside before starting fresh.
@@ -1694,7 +1710,7 @@ def _block_finds_save() -> None:
     tmp = BLOCK_FINDS_PATH + ".tmp"
     try:
         with open(tmp, "w") as f:
-            json.dump({"finds": _block_finds_cache}, f, indent=2)
+            json.dump({"finds": _block_finds_cache, "seeds": _block_seeds_cache}, f, indent=2)
         os.replace(tmp, BLOCK_FINDS_PATH)
     except OSError as e:
         print(f"[block-finds] save failed: {e}", file=sys.stderr)
@@ -1781,8 +1797,16 @@ def _fleet_block_height(chain_id):
     return max(heights) if heights else 0
 
 
+_CHAIN_NAMES = {
+    "btc": "Bitcoin", "bch": "Bitcoin Cash", "bsv": "Bitcoin SV",
+    "xec": "eCash",   "dgb": "DigiByte",     "nmc": "Namecoin",
+    "quai": "Quai",
+}
+
+
 def _block_finds_record(ip: str, label: str, latest: dict, chain_id: str,
-                        height_fallback: int = 0, while_away: bool = False) -> dict:
+                        height_fallback: int = 0, while_away: bool = False,
+                        delta: int = 1) -> dict:
     """Append a new block-find record to the persistent list. Returns the
     record (with the id assigned) so callers can attach it to the device
     event log and/or fire downstream notifications. Idempotent on its own
@@ -1798,10 +1822,7 @@ def _block_finds_record(ip: str, label: str, latest: dict, chain_id: str,
         "device_label": label or latest.get("hostname") or ip,
         "mac_addr": (latest.get("macAddr") or "").upper(),
         "chain": chain_id,
-        "chain_name": {
-            "btc": "Bitcoin", "bch": "Bitcoin Cash", "bsv": "Bitcoin SV",
-            "xec": "eCash",   "dgb": "DigiByte",     "nmc": "Namecoin",
-        }.get(chain_id, chain_id.upper()),
+        "chain_name": _CHAIN_NAMES.get(chain_id, chain_id.upper()),
         "block_height": int(latest.get("blockHeight") or 0) or int(height_fallback or 0),
         "best_diff": str(latest.get("bestDiff") or "0"),
         "best_session_diff": str(latest.get("bestSessionDiff") or "0"),
@@ -1811,6 +1832,10 @@ def _block_finds_record(ip: str, label: str, latest: dict, chain_id: str,
         # NOTICED, not when it happened. The UI says so rather than implying
         # it just occurred.
         "while_away": bool(while_away),
+        # Blocks this record stands for — >1 when the counter jumped by several
+        # between polls. Must be set BEFORE the save below; it used to be
+        # attached by the caller afterwards and never reached disk.
+        "delta": max(1, int(delta or 1)),
         "acknowledged": False,
     }
     with _block_finds_lock:
@@ -1818,6 +1843,91 @@ def _block_finds_record(ip: str, label: str, latest: dict, chain_id: str,
         _block_finds_cache.append(rec)  # type: ignore[union-attr]
         _block_finds_save()
     return rec
+
+
+def _block_device_key(ip: str, mac: str = "") -> str:
+    """Stable identity for the lifetime tally. MAC survives a DHCP IP change;
+    firmware that reports no MAC (Braiins) falls back to the IP."""
+    mac = (mac or "").strip().upper()
+    return mac or str(ip)
+
+
+def _block_find_key(f: dict) -> str:
+    return _block_device_key(f.get("device_ip", ""), f.get("mac_addr", ""))
+
+
+def _block_tally_seed(ip: str, label: str, latest: dict, fw_count: int, chain_fn) -> None:
+    """Seed a device's lifetime tally ONCE from its firmware counter.
+
+    The firmware counter includes every find Baller already recorded, so the
+    seed is only the remainder: the blocks solved before Baller was watching.
+    Those get attributed to the chain the device is on right now — the best
+    guess available, since the firmware doesn't say which chain they were on.
+    A seed of 0 is still stored: it marks the device as seeded so we never
+    re-seed (a firmware reset would otherwise double-count)."""
+    key = _block_device_key(ip, latest.get("macAddr", ""))
+    with _block_finds_lock:
+        finds = _block_finds_load()
+        if key in _block_seeds_cache:
+            return
+        seen = sum(int(f.get("delta") or 1) for f in finds if _block_find_key(f) == key)
+        _block_seeds_cache[key] = {
+            "chain": chain_fn(),
+            "count": max(0, int(fw_count) - seen),
+            "label": label,
+            "at": int(time.time()),
+        }
+        _block_finds_save()
+
+
+def _block_tally() -> dict:
+    """Lifetime solved blocks: seed + every recorded find, per device and per
+    chain. Includes devices since removed from the dashboard — a block found
+    is still a block found.
+
+    Returns {"devices": {key: {"label", "byChain": {chain: n}, "total"}},
+             "byChain": {chain: n}, "total": n}."""
+    devices: dict = {}
+
+    def add(key, label, chain, n):
+        if n <= 0:
+            return
+        d = devices.setdefault(key, {"label": label, "byChain": {}, "total": 0})
+        d["label"] = label or d["label"]
+        d["byChain"][chain] = d["byChain"].get(chain, 0) + n
+        d["total"] += n
+
+    with _block_finds_lock:
+        finds = _block_finds_load()
+        for key, seed in _block_seeds_cache.items():
+            add(key, seed.get("label", ""), seed.get("chain") or "btc", int(seed.get("count") or 0))
+        for f in sorted(finds, key=lambda r: r.get("found_at", 0)):
+            add(_block_find_key(f), f.get("device_label", ""), f.get("chain") or "btc",
+                int(f.get("delta") or 1))
+    by_chain: dict = {}
+    for d in devices.values():
+        for c, n in d["byChain"].items():
+            by_chain[c] = by_chain.get(c, 0) + n
+    return {"devices": devices, "byChain": by_chain, "total": sum(by_chain.values())}
+
+
+def _device_blocks_payload(ip: str, latest: dict) -> dict:
+    """Per-device lifetime block count for the summary. `firmwareSession` is
+    only set on firmware that keeps a separate since-boot counter (NerdQAxe
+    fork: foundBlocks vs totalFoundBlocks)."""
+    mine = _block_tally()["devices"].get(
+        _block_device_key(ip, latest.get("macAddr", "")), {})
+    session = latest.get("foundBlocks") if latest.get("totalFoundBlocks") is not None else None
+    try:
+        session = int(session) if session is not None else None
+    except (TypeError, ValueError):
+        session = None
+    return {
+        "byChain": mine.get("byChain", {}),
+        "total": mine.get("total", 0),
+        "firmwareLifetime": _device_block_count(latest),
+        "firmwareSession": session,
+    }
 
 
 def _block_finds_ack(find_id: str) -> bool:
@@ -2435,6 +2545,7 @@ def api_block_finds():
     return jsonify({
         "pending": _block_finds_pending(),
         "recent":  _block_finds_recent(20),
+        "tally":   _block_tally(),
     })
 
 
