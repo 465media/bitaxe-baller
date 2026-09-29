@@ -23,7 +23,7 @@ category: bitcoin
 # manifest fixes) can bump the patch component independently — the image
 # is pinned by digest, so the underlying app code stays the same. Next
 # aligned release across all platforms resets this.
-version: "1.23.0"
+version: "1.24.0"
 
 port: 13700
 description: >-
@@ -69,6 +69,23 @@ gallery:
   - https://bitaxeballer.com/img/screenshots/scan.jpg
 
 releaseNotes: >-
+  v1.24.0 — Lifetime blocks-found counter for every miner and your whole fleet. New: see
+  how many blocks each miner has solved, lifetime, per coin. The device page gets a
+  "blocks found" row, e.g. "6 DGB lifetime · 2 this boot". The "this boot" count shows
+  on NerdQAxe firmware, which keeps a separate since-boot counter. New: fleet tally on
+  the home page. A "blocks found" tile adds up every block your fleet has solved, split
+  by coin. Hover it for a per-miner breakdown. It stays hidden until you've found your
+  first block. Baller keeps the count itself, so it survives firmware reflashes and
+  factory resets. Miners are tracked by MAC address, so a router handing out a new IP
+  doesn't split one miner's history. Miners you've removed from the dashboard still
+  count toward the fleet total. Blocks a miner solved before Baller started watching are
+  read from the miner's own counter the first time Baller sees it after this update.
+  They're credited to the coin it's mining at that moment, since the firmware doesn't
+  record which coin they were on. Fix: when a miner solved more than one block between
+  two checks, only one was recorded. The full count is now saved. Fix: a Quai block find
+  is now labelled "Quai" rather than "QUAI". Free for everyone, like the confetti.
+
+
   v1.23.0 — Quai mining support + pick your own dashboard port. New: Quai is a first-
   class chain. Point a miner at a Quai-SHA pool and Baller now recognises it instead of
   filing it under Bitcoin — its own home-page group, its own QUAI pool tag, and a QUAI
