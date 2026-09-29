@@ -97,6 +97,61 @@ def check_persistence(failures):
     return 5
 
 
+# Lifetime tally: seed from the firmware counter once, then add every recorded
+# find, keyed by MAC so a DHCP move doesn't split a miner's history.
+def check_tally(failures):
+    import json, tempfile, os
+    import app
+
+    def fresh(d, finds=()):
+        app.BLOCK_FINDS_PATH = os.path.join(d, "block_finds.json")
+        app._block_finds_cache = [dict(f) for f in finds]
+        app._block_seeds_cache = {}
+
+    with tempfile.TemporaryDirectory() as d:
+        # A multi-block catch-up used to lose its count: delta was attached
+        # after the save and never reached disk.
+        fresh(d)
+        app._block_finds_record("192.168.1.218", "n1", {"macAddr": "aa:bb"}, "dgb", delta=3)
+        saved = json.load(open(app.BLOCK_FINDS_PATH))
+        if saved["finds"][0].get("delta") != 3:
+            failures.append("  FAIL  tally: multi-find delta not persisted")
+        if app._block_tally()["byChain"] != {"dgb": 3}:
+            failures.append(f"  FAIL  tally: delta not counted, got {app._block_tally()['byChain']}")
+
+        # Firmware says 6; Baller recorded 2 (one on XEC) → seed is the other 4
+        # on the current chain.
+        mine = {"device_ip": "192.168.1.218", "mac_addr": "AA:BB", "device_label": "n1"}
+        fresh(d, [dict(mine, chain="dgb"), dict(mine, chain="xec")])
+        app._block_tally_seed("192.168.1.218", "n1", {"macAddr": "aa:bb"}, 6, lambda: "dgb")
+        got = app._block_tally()["devices"]["AA:BB"]["byChain"]
+        if got != {"dgb": 5, "xec": 1}:
+            failures.append(f"  FAIL  tally: seed remainder wrong, got {got}")
+        # Seed is once-only — a later reset counter must not re-seed.
+        app._block_tally_seed("192.168.1.218", "n1", {"macAddr": "aa:bb"}, 0, lambda: "dgb")
+        if app._block_tally()["total"] != 6:
+            failures.append("  FAIL  tally: re-seeded after the first seed")
+        # Seeds survive a restart.
+        app._block_finds_cache = None
+        app._block_seeds_cache = {}
+        if app._block_tally()["total"] != 6:
+            failures.append("  FAIL  tally: seed did not survive reload")
+
+        # MAC ties finds across an IP change; no-MAC firmware falls back to IP.
+        fresh(d, [dict(mine, chain="dgb"), dict(mine, device_ip="192.168.1.50", chain="dgb"),
+                  {"device_ip": "192.168.1.100", "mac_addr": "", "chain": "btc", "device_label": "bmm"}])
+        t = app._block_tally()
+        if t["devices"].get("AA:BB", {}).get("total") != 2 or t["devices"].get("192.168.1.100", {}).get("total") != 1:
+            failures.append(f"  FAIL  tally: device keying wrong, got {t['devices']}")
+
+        # "This boot" only exists on firmware with a separate lifetime counter.
+        fork = app._device_blocks_payload("1.2.3.4", {"foundBlocks": 2, "totalFoundBlocks": 6})
+        stock = app._device_blocks_payload("1.2.3.5", {"blockFound": 1})
+        if (fork["firmwareLifetime"], fork["firmwareSession"]) != (6, 2) or stock["firmwareSession"] is not None:
+            failures.append(f"  FAIL  tally: device payload wrong, fork={fork} stock={stock}")
+    return 6
+
+
 def main() -> int:
     failures = []
 
@@ -113,7 +168,7 @@ def main() -> int:
                 f"got {(new_prev, delta)!r}, expected {(exp_prev, exp_delta)!r}"
             )
 
-    extra = check_persistence(failures)
+    extra = check_persistence(failures) + check_tally(failures)
 
     total = len(COUNT_FIXTURES) + len(TRANSITION_FIXTURES) + extra
     print(f"block detection: {total - len(failures)} / {total} pass")
@@ -124,3 +179,4 @@ def main() -> int:
 
 if __name__ == "__main__":
     sys.exit(main())
+

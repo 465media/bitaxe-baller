@@ -517,6 +517,20 @@ function autotuneEventLog(events) {
   }</div>`;
 }
 
+// Lifetime solved blocks, per coin. Hidden for firmware with no block counter
+// and nothing recorded (nothing honest to show).
+function blocksRow(b) {
+  if (!b || (!b.total && b.firmwareLifetime == null)) return '';
+  const coins = Object.entries(b.byChain || {}).sort((x, y) => y[1] - x[1]);
+  let val = coins.length
+    ? coins.map(([c, n]) => `${formatNum(n)} ${escapeHtml(c.toUpperCase())}`).join(' · ') + ' lifetime'
+    : '0 lifetime';
+  if (b.firmwareSession != null) val += ` · ${formatNum(b.firmwareSession)} this boot`;
+  const fw = b.firmwareLifetime != null ? ` The miner's own counter reads ${b.firmwareLifetime}.` : '';
+  const tip = `Solved blocks this miner has found, per coin. Baller keeps this count itself, so it survives firmware reflashes and resets. Blocks found before Baller was watching are credited to the coin the miner was on when Baller first saw it.${fw}`;
+  return `<div class="row" data-tip="${escapeHtml(tip)}"><span class="k">blocks found</span><span class="v${b.total ? ' good' : ''}">${val}</span></div>`;
+}
+
 function renderDetail(d) {
   if (!d || !d.online) {
     return `
@@ -621,6 +635,7 @@ function renderDetail(d) {
       </div>
 
       <div class="row" data-tip="Percentage of submitted work the pool rejected as invalid. Under 0.1% is great, 0.1–0.5% is OK, above 0.5% means the chip is unstable at the current settings — back off voltage or frequency."><span class="k">hw error rate</span><span class="v ${hwErrClass(hw.ratePct)}">${hw.ratePct}% (${hw.hwErrors}/${hw.shares + hw.hwErrors})</span></div>
+      ${blocksRow(d.blocks)}
       <div class="row" data-tip="Current target difficulty the pool is asking for. The pool auto-adjusts this based on your hashrate so you submit shares at a sensible cadence (~every few seconds)."><span class="k">pool difficulty</span><span class="v">${formatDiff(m.poolDifficulty)} · lifetime ${formatNum(sh.lifetimeAccepted)} accepted</span></div>
       <div class="row" data-tip="${isBraiins ? 'Nominal hashrate BOSer reports for this miner; \'actual\' compares your live rate against it.' : 'Expected hashrate at this frequency, taken directly from the firmware\'s reported value (smallCoreCount × frequency / 1000). Matches AxeOS exactly. Below 85% suggests the chip is throttling on errors or this particular silicon is on the lower end of the lottery.'}"><span class="k">expected</span><span class="v">${fmtHashrate(e.expectedGhs, 1)} ${hashrateUnitLabel()} · actual ${e.actualPctOfExpected}%</span></div>
       <div class="row" data-tip="Current fan RPM and duty cycle. 'auto' means firmware controls it based on temperature."><span class="k">fan</span><span class="v">${m.fanSpeed} RPM · ${m.fanPercent}%${m.autofanspeed ? ' · auto' : ''}</span></div>

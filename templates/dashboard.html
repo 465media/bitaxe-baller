@@ -91,6 +91,11 @@
     <div class="val"><span id="sum-cost-cur" class="cost-cur"></span><span id="sum-cost">—</span></div>
     <div class="sub"><span id="sum-cost-month">—</span>/mo · <button type="button" id="elec-rate-btn" class="cost-rate-link" data-tip="Set your electricity rate (per kWh) and currency symbol.">set rate</button></div>
   </div>
+  <div class="cell" id="sum-blocks-cell" hidden data-tip="Solved blocks across your whole fleet, lifetime, per coin.">
+    <div class="label">blocks found</div>
+    <div class="val"><span id="sum-blocks">0</span><span class="unit">lifetime</span></div>
+    <div class="sub" id="sum-blocks-coins">—</div>
+  </div>
   <div class="cell" data-tip="Devices currently reachable / total devices in your config. A device drops to offline after 3 consecutive failed polls (~15 seconds).">
     <div class="label">online</div>
     <div class="val"><span id="sum-online">0</span><span class="unit" id="sum-total">/0</span></div>
@@ -1672,6 +1677,26 @@ setInterval(checkFirmware, 30 * 60 * 1000);
     }
   }
 
+  // Fleet lifetime block tally tile. Hidden until the fleet has found at
+  // least one block — a permanent "0" tile would just be noise for BTC solo.
+  function renderBlockTally(tally) {
+    const cell = document.getElementById('sum-blocks-cell');
+    if (!cell) return;
+    if (!tally || !tally.total) { cell.hidden = true; return; }
+    cell.hidden = false;
+    document.getElementById('sum-blocks').textContent = formatNum(tally.total);
+    const coins = Object.entries(tally.byChain || {}).sort((a, b) => b[1] - a[1]);
+    document.getElementById('sum-blocks-coins').textContent =
+      coins.map(([c, n]) => `${formatNum(n)} ${c.toUpperCase()}`).join(' · ');
+    const perDevice = Object.values(tally.devices || {})
+      .sort((a, b) => b.total - a.total)
+      .map(d => `${d.label}: ` + Object.entries(d.byChain).map(([c, n]) => `${n} ${c.toUpperCase()}`).join(', '));
+    cell.setAttribute('data-tip',
+      'Solved blocks across your fleet, lifetime, per coin (includes removed devices). '
+      + 'Blocks found before Baller was watching are counted from the miner\'s own counter and credited to the coin it was on when first seen. '
+      + perDevice.join(' · '));
+  }
+
   async function _checkBlockFinds() {
     let res;
     try {
@@ -1679,6 +1704,7 @@ setInterval(checkFirmware, 30 * 60 * 1000);
     } catch (_) {
       return;
     }
+    renderBlockTally(res && res.tally);
     const pending = (res && res.pending) || [];
     if (pending.length === 0) {
       if (_activeFindId) _hideOverlay();
