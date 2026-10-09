@@ -62,7 +62,7 @@
     <div>poll <span class="v" id="poll-rate">5s</span></div>
     <div>devices <span class="v" id="device-count">0</span></div>
     <div>status <span class="v live blink">● live</span></div>
-    <div>uptime <span class="v" id="page-uptime">00:00:00</span></div>
+    <div data-tip="How long Bitaxe Baller itself has been running. Resets only when the app restarts — not when you reload or switch pages. Each miner's own uptime is shown on its card.">uptime <span class="v" id="page-uptime">00:00:00</span></div>
     <button id="theme-toggle" class="theme-toggle" aria-label="Toggle light/dark mode"
             data-tip="Toggle between dark (terminal aesthetic) and light themes. Saved per-browser in localStorage so each device remembers your preference.">
       <span id="theme-icon">🌙</span><span id="theme-label">dark</span>
@@ -294,7 +294,7 @@
 </details>
 
 <footer>
-  <div>Bitaxe Baller v1.24.0 · no warranty, use at your own risk{% if show_logs_link %} · <a href="#" class="footer-link" id="open-logs-link" data-tip="Opens the CSV telemetry folder in Finder/Explorer — one file per device per day, kept forever." data-tip-pos="top">logs folder</a>{% endif %}{% if show_port_setting %} · <a href="#" class="footer-link" id="port-edit-link" data-tip="Change the port the dashboard listens on. Takes effect after you restart the app." data-tip-pos="top">port {{ current_port }}</a>{% endif %}</div>
+  <div>Bitaxe Baller v1.24.1 · no warranty, use at your own risk{% if show_logs_link %} · <a href="#" class="footer-link" id="open-logs-link" data-tip="Opens the CSV telemetry folder in Finder/Explorer — one file per device per day, kept forever." data-tip-pos="top">logs folder</a>{% endif %}{% if show_port_setting %} · <a href="#" class="footer-link" id="port-edit-link" data-tip="Change the port the dashboard listens on. Takes effect after you restart the app." data-tip-pos="top">port {{ current_port }}</a>{% endif %}</div>
   <div class="credits">made with <span class="heart">♥</span> in NH, by <a href="https://465-media.com" target="_blank" rel="noopener">465-media.com</a></div>
   <div>last update <span id="last-update">—</span></div>
 </footer>
@@ -319,7 +319,9 @@
 <script src="{{ url_for('static', filename='confetti.min.js') }}"></script>
 <script src="{{ url_for('static', filename='common.js') }}"></script>
 <script>
-const pageStart = Date.now();
+// App (server) uptime, not page uptime: anchor to the server's uptime at
+// render time so reloads and back-navigation don't reset the counter.
+const pageStart = Date.now() - {{ app_uptime_s|int }} * 1000;
 function fmtPageUptime() {
   const s = Math.floor((Date.now() - pageStart) / 1000);
   const h = String(Math.floor(s / 3600)).padStart(2, '0');
@@ -1406,9 +1408,11 @@ async function poll() {
   }
 }
 
-setInterval(() => {
+function tickPageUptime() {
   document.getElementById('page-uptime').textContent = fmtPageUptime();
-}, 1000);
+}
+tickPageUptime();
+setInterval(tickPageUptime, 1000);
 
 poll();
 setInterval(poll, 5000);

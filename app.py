@@ -31,7 +31,11 @@ import relay_client
 # Info.plist/EXE version and the dashboard footer template should both
 # match this string. Update bump checklist: APP_VERSION here, the spec's
 # version="..." entries, and the v1.X.Y string in dashboard.html + device.html.
-APP_VERSION = "1.24.0"
+APP_VERSION = "1.24.1"
+
+# Monotonic process start, for the dashboard header's "uptime". It used to be
+# time-since-page-load, so every reload / back-navigation reset it to 0.
+_APP_START_MONO = time.monotonic()
 
 
 # Test-mode override: pretend to be an older version so the auto-update flow
@@ -2431,7 +2435,8 @@ def index():
     return render_template("dashboard.html", presets=PRESETS, bounds=BOUNDS,
                            show_logs_link=is_host,
                            show_port_setting=is_host and not port_is_env_locked(),
-                           current_port=PORT)
+                           current_port=PORT,
+                           app_uptime_s=int(time.monotonic() - _APP_START_MONO))
 
 
 @app.route("/healthz")
