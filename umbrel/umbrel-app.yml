@@ -69,6 +69,14 @@ gallery:
   - https://bitaxeballer.com/img/screenshots/scan.jpg
 
 releaseNotes: >-
+  v1.24.1 — Dashboard uptime no longer resets when you reload or switch pages. Fix: the
+  "uptime" counter in the dashboard header reset to 00:00:00 every time you reopened the
+  dashboard or came back from a miner's page. It was counting how long that browser tab
+  had been open. It now shows how long Bitaxe Baller itself has been running, so it only
+  resets when the app restarts. Hover the uptime counter for a short explanation. Each
+  miner's own uptime is still shown on its card and device page.
+
+
   v1.24.0 — Lifetime blocks-found counter for every miner and your whole fleet. New: see
   how many blocks each miner has solved, lifetime, per coin. The device page gets a
   "blocks found" row, e.g. "6 DGB lifetime · 2 this boot". The "this boot" count shows
